@@ -182,7 +182,7 @@ describe('AI Providers', () => {
 
       const result = await provider.streamChat(
         {
-          model: 'openai/gpt-oss-20b',
+          model: 'nvidia/nemotron-3-super-120b-a12b',
           messages: [{ role: 'user', content: 'Solve this' }],
         },
         (chunk) => contentChunks.push(chunk),
@@ -225,7 +225,7 @@ describe('AI Providers', () => {
 
       const result = await provider.streamChat(
         {
-          model: 'openai/gpt-oss-20b',
+          model: 'nvidia/nemotron-3-super-120b-a12b',
           messages: [{ role: 'user', content: 'Find X' }],
         },
         (chunk) => contentChunks.push(chunk),

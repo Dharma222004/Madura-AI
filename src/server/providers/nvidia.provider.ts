@@ -94,8 +94,11 @@ export class NvidiaProvider implements AIProvider {
   }
 
   resolveModel(_modelId?: string): string {
-    // Single model: always use gpt-oss-20b via NVIDIA NIM
-    return process.env.NVIDIA_MODEL || 'openai/gpt-oss-20b';
+    const model = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b';
+    if (!model.includes('/') && model.includes('nemotron')) {
+      return `nvidia/${model}`;
+    }
+    return model;
   }
 
   /**

@@ -198,17 +198,17 @@ export function buildModelRegistry(): ModelConfig[] {
     false
   );
   return [
-    // 1. Auto (Default Model) — NVIDIA NIM GPT-OSS-20B
+    // 1. Auto (Default Model) — NVIDIA NIM Nemotron-3 Super 120B
     {
       id: 'auto',
       displayName: 'Auto',
-      realModel: process.env.NVIDIA_MODEL || 'openai/gpt-oss-20b',
+      realModel: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b',
       baseUrl: nvidiaBase,
       apiKey: nvidiaKeys[0] || '',
       apiKeys: nvidiaKeys,
       providerName: 'nvidia',
       isDefault: true,
-      description: 'Smart default model',
+      description: 'Nemotron-3 Super 120B',
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
@@ -317,6 +317,8 @@ export class MultiModelProvider implements AIProvider {
       !modelId ||
       modelId === 'auto' ||
       modelId === 'default' ||
+      modelId === 'nemotron-3-super-120b-a12b' ||
+      modelId === 'nvidia/nemotron-3-super-120b-a12b' ||
       modelId === 'gpt-oss-20b' ||
       modelId === 'openai/gpt-oss-20b' ||
       modelId === 'gpt-6.1-sol'
@@ -412,6 +414,9 @@ export class MultiModelProvider implements AIProvider {
       let modelToSend = target.realModel;
       if (modelToSend === 'gemini-2.0-flash') {
         modelToSend = 'gemini-2.5-flash';
+      }
+      if (target.baseUrl.includes('nvidia.com') && !modelToSend.includes('/') && modelToSend.includes('nemotron')) {
+        modelToSend = `nvidia/${modelToSend}`;
       }
 
       let authKey = target.apiKey;

@@ -318,7 +318,7 @@ If there are no personal facts, return {"facts": []}.`;
         let extractedText = '';
         await this.nvidiaProvider.streamChat(
           {
-            model: 'openai/gpt-oss-20b',
+            model: 'nvidia/nemotron-3-super-120b-a12b',
             messages: [{ role: 'user', content: extractionPrompt }],
             temperature: 0.1,
             maxTokens: 200,
