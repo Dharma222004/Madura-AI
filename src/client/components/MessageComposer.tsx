@@ -80,10 +80,12 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(
-        textareaRef.current.scrollHeight,
-        200
-      )}px`;
+      if (content) {
+        textareaRef.current.style.height = `${Math.min(
+          textareaRef.current.scrollHeight,
+          200
+        )}px`;
+      }
     }
   }, [content]);
 

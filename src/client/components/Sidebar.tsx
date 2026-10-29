@@ -93,20 +93,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* New Chat pencil icon */}
           <button
             className="sidebar-btn-icon"
-            onClick={onNewChat}
+            onClick={() => {
+              onNewChat();
+              if (isMobileOpen) onCloseMobile();
+            }}
             title="New chat"
             aria-label="New chat"
           >
             <PenSquare size={17} />
           </button>
-          {/* Collapse sidebar */}
+          {/* Collapse sidebar (or close mobile drawer) */}
           <button
             className="sidebar-btn-icon"
-            onClick={onToggleCollapse}
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
+            onClick={isMobileOpen ? onCloseMobile : onToggleCollapse}
+            title={isMobileOpen ? "Close sidebar" : "Collapse sidebar"}
+            aria-label={isMobileOpen ? "Close sidebar" : "Collapse sidebar"}
           >
-            <PanelLeftClose size={17} />
+            {isMobileOpen ? <X size={18} /> : <PanelLeftClose size={17} />}
           </button>
         </div>
       </div>

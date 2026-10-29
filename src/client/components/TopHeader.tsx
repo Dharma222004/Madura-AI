@@ -15,15 +15,28 @@ interface TopHeaderProps {
 export const TopHeader: React.FC<TopHeaderProps> = ({
   isSidebarCollapsed,
   onToggleSidebar,
+  onOpenMobileSidebar,
   onNewChat,
 }) => {
   return (
     <header className="top-header">
       <div className="top-header-left">
-        {/* Expand sidebar trigger (only when collapsed) */}
+        {/* Mobile sidebar trigger (always visible on mobile screens) */}
+        <button
+          type="button"
+          className="sidebar-btn-icon mobile-sidebar-toggle-btn"
+          onClick={onOpenMobileSidebar}
+          title="Open sidebar"
+          aria-label="Open sidebar"
+        >
+          <PanelLeftOpen size={19} />
+        </button>
+
+        {/* Expand sidebar trigger (only on desktop when collapsed) */}
         {isSidebarCollapsed && (
           <button
-            className="sidebar-btn-icon"
+            type="button"
+            className="sidebar-btn-icon desktop-sidebar-toggle-btn"
             onClick={onToggleSidebar}
             title="Expand sidebar"
             aria-label="Expand sidebar"
