@@ -358,16 +358,17 @@
 
 .mermaid-diagram-card {
   margin: 18px 0;
-  border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0a0a0a;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #080c14;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-  transition: box-shadow 0.2s ease;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .mermaid-diagram-card:hover {
-  box-shadow: 0 6px 32px rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
 }
 
 /* ---- Header ---- */
@@ -376,8 +377,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(10, 10, 10, 0.98);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0b0f19;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -392,7 +393,7 @@
 .mermaid-diagram-title {
   font-size: 13px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #f1f5f9;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -403,10 +404,10 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 1px 7px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 7px;
   border-radius: 4px;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -473,11 +474,11 @@
 
 /* ---- Viewport ---- */
 .mermaid-diagram-viewport {
-  background: #000000;
+  background: #06090f;
   overflow: auto;
-  min-height: 140px;
-  max-height: 520px;
-  padding: 20px;
+  min-height: 160px;
+  max-height: 650px;
+  padding: 24px 20px;
   position: relative;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
@@ -493,19 +494,116 @@
   border-radius: 3px;
 }
 
-/* ---- SVG wrapper (handles zoom transform) ---- */
+/* ---- SVG wrapper & Text Overflow / Clipping Prevention ---- */
 .mermaid-svg-wrapper {
   display: flex;
   justify-content: center;
+  align-items: center;
+  min-width: 100%;
+  padding: 8px 4px;
   transition: transform 0.2s ease;
   transform-origin: top center;
 }
 
 .mermaid-svg-wrapper svg {
   max-width: 100%;
-  height: auto;
+  height: auto !important;
   display: block;
-  border-radius: 6px;
+  overflow: visible !important;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* Strict foreignObject overflow & line-height reset:
+   Completely stops text clipping / bottom line truncation */
+.mermaid-svg-wrapper foreignObject {
+  overflow: visible !important;
+}
+
+.mermaid-svg-wrapper foreignObject div,
+.mermaid-svg-wrapper foreignObject span,
+.mermaid-svg-wrapper foreignObject p,
+.mermaid-svg-wrapper .nodeLabel,
+.mermaid-svg-wrapper .label {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13.5px !important;
+  line-height: 1.35 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mermaid-svg-wrapper foreignObject div {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  min-height: 100% !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.mermaid-svg-wrapper foreignObject span.nodeLabel {
+  display: inline-block !important;
+  white-space: normal !important;
+  text-align: center !important;
+  max-width: 100% !important;
+}
+
+/* SVG Text elements */
+.mermaid-svg-wrapper text {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+}
+
+/* Cluster / Subgraph card styling matching reference Image 3 */
+.mermaid-svg-wrapper .cluster rect {
+  fill: rgba(255, 255, 255, 0.03) !important;
+  stroke: rgba(255, 255, 255, 0.12) !important;
+  stroke-width: 1.5px !important;
+  rx: 12px !important;
+  ry: 12px !important;
+}
+
+.mermaid-svg-wrapper .cluster text,
+.mermaid-svg-wrapper .cluster span {
+  fill: #f8fafc !important;
+  color: #f8fafc !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+}
+
+/* Connector arrows & paths */
+.mermaid-svg-wrapper .edgePath path {
+  stroke: #94a3b8 !important;
+  stroke-width: 2px !important;
+}
+
+.mermaid-svg-wrapper marker path,
+.mermaid-svg-wrapper marker polygon {
+  fill: #94a3b8 !important;
+  stroke: #94a3b8 !important;
+}
+
+/* Edge labels (badges on arrows) */
+.mermaid-svg-wrapper .edgeLabel {
+  background-color: transparent !important;
+}
+
+.mermaid-svg-wrapper .edgeLabel rect {
+  fill: #1e293b !important;
+  stroke: rgba(255, 255, 255, 0.15) !important;
+  rx: 6px !important;
+  ry: 6px !important;
+}
+
+.mermaid-svg-wrapper .edgeLabel span,
+.mermaid-svg-wrapper .edgeLabel text {
+  color: #e2e8f0 !important;
+  fill: #e2e8f0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
 }
 
 /* ---- Loading state ---- */
