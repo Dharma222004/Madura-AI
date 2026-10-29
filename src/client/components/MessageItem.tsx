@@ -96,17 +96,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
   return (
     <div className={`message-row ${isUser ? 'user' : 'assistant'}`}>
-      {/* Brand Avatar (Assistant only, using the professional Madura AI logo) */}
-      {!isUser && (
-        <div className="message-avatar assistant">
-          <img
-            src="/logo.png"
-            alt="Madura AI"
-            className="message-avatar-img"
-          />
-        </div>
-      )}
-
       <div className="message-content-wrapper">
         {/* Attachments preview */}
         {message.attachments && message.attachments.length > 0 && (
@@ -214,7 +203,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   />
                 )}
 
-                <div className="markdown-body">
+                <div className={`markdown-body${message.status === 'streaming' && message.content ? ' is-streaming' : ''}`}>
                 {/* Fallback 3-dot thinking indicator only when waiting for the very first token before any thought */}
                 {message.status === 'streaming' && !message.content && !message.thought && !message.searchQuery && (
                   <div className="thinking-indicator">
@@ -315,9 +304,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 >
                   {message.content}
                 </ReactMarkdown>
-                {message.status === 'streaming' && message.content && (
-                  <span className="streaming-cursor" />
-                )}
                 </div>
               </div>
             )}

@@ -76,16 +76,16 @@ export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
     }
   };
 
-  // Format thinking duration
+  // Format thinking duration — abbreviated to prevent wrapping on narrow screens
   const formatDuration = () => {
     if (isActivelyThinking) {
       return `${liveElapsedSec.toFixed(1)}s`;
     }
     if (thoughtDurationMs && thoughtDurationMs > 0) {
       const seconds = Math.round(thoughtDurationMs / 100) / 10;
-      return `${seconds} second${seconds === 1 ? '' : 's'}`;
+      return `${seconds}s`;
     }
-    return 'a few seconds';
+    return '~1s';
   };
 
   const wordCount = thought ? thought.trim().split(/\s+/).filter(Boolean).length : 0;

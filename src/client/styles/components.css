@@ -551,20 +551,16 @@
 .message-row.assistant {
   justify-content: flex-start;
   align-items: flex-start;
+  gap: 0;
 }
 
+/* Avatar is removed — no gap needed for assistant rows */
 .message-avatar {
   display: none;
 }
 
 .message-row.assistant .message-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  margin-top: 2px;
+  display: none;
 }
 
 .message-avatar.assistant {
@@ -574,12 +570,7 @@
 }
 
 .message-avatar-img {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  object-fit: contain;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  background-color: #000000;
+  display: none;
 }
 
 .message-content-wrapper {
@@ -2047,6 +2038,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .thinking-icon-badge {
@@ -2080,6 +2074,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .active-thinking .thinking-header-title {
@@ -2206,7 +2205,33 @@
   50% { opacity: 0; }
 }
 
+/* ── Inline streaming cursor via CSS ::after (avoids orphan cursor on new line) ── */
+.markdown-body.is-streaming > *:last-child::after,
+.markdown-body.is-streaming > p:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  background-color: var(--accent-light);
+  animation: cursor-blink 0.8s ease-in-out infinite;
+  vertical-align: middle;
+  margin-left: 3px;
+  border-radius: 1px;
+}
 
+/* If last child is a list or heading, still append cursor */
+.markdown-body.is-streaming > ul:last-child li:last-child::after,
+.markdown-body.is-streaming > ol:last-child li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 13px;
+  background-color: var(--accent-light);
+  animation: cursor-blink 0.8s ease-in-out infinite;
+  vertical-align: middle;
+  margin-left: 3px;
+  border-radius: 1px;
+}
 
 /* ── Composer Bottom Bar (Below Chatbox) ────────────────────────────────── */
 .composer-bottom-bar {
@@ -2435,13 +2460,33 @@
   }
 
   .message-avatar-img {
-    width: 24px;
-    height: 24px;
+    display: none;
   }
 
   .message-row.assistant .message-avatar {
-    width: 24px;
-    height: 24px;
+    display: none;
+  }
+
+  /* Thinking accordion: keep header on one row on mobile */
+  .thinking-accordion-header {
+    padding: 7px 10px;
+  }
+
+  .thinking-header-title {
+    font-size: 12px;
+  }
+
+  .thinking-word-count {
+    font-size: 11px;
+  }
+
+  .thinking-copy-btn {
+    padding: 2px 5px;
+    font-size: 11px;
+  }
+
+  .copy-label {
+    display: none;
   }
 
   .modal-card,
