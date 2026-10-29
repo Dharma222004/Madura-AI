@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" class="madura-logo-mark">
+  <defs>
+    <linearGradient id="markGrad" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="18" y1="14" x2="30" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e0e7ff"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <!-- Geometric M Structure -->
+  <path d="M10 38V12L20 23V38H10Z" fill="url(#markGrad)"/>
+  <path d="M38 38V12L28 23V38H38Z" fill="url(#markGrad)"/>
+  <path d="M20 23L24 28L28 23L24 17L20 23Z" fill="url(#coreGrad)"/>
+  <!-- Neural Nodes -->
+  <circle cx="24" cy="22.5" r="2.5" fill="#ffffff"/>
+  <circle cx="10" cy="12" r="2.2" fill="#a5b4fc"/>
+  <circle cx="38" cy="12" r="2.2" fill="#a5b4fc"/>
+</svg>

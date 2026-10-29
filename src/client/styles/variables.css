@@ -1,0 +1,180 @@
+/* ==========================================================================
+   Madura AI — Design System Variables & Tokens
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  /* Surface & Background — Pure Black */
+  --bg-primary: #000000;      /* main chat area */
+  --bg-secondary: #0a0a0a;    /* sidebar */
+  --bg-tertiary: #111111;     /* cards, elevated inputs */
+  --bg-elevated: #1a1a1a;     /* dropdown, hover surfaces */
+  --bg-hover: rgba(237, 237, 237, 0.06);
+  --bg-active: rgba(237, 237, 237, 0.1);
+  --bg-glass: rgba(0, 0, 0, 0.94);
+  --bg-glass-card: rgba(0, 0, 0, 0.88);
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-focus: rgba(255, 255, 255, 0.35);
+
+  /* Typography Colors */
+  --text-primary: #ededed;
+  --text-heading: #ffffff;
+  --text-secondary: #b4b4b4;
+  --text-muted: #8e8e8e;
+  --text-inverse: #000000;
+
+  /* Accent — pure foreground tones */
+  --accent-primary: #ededed;
+  --accent-hover: #ffffff;
+  --accent-light: #ededed;
+  --accent-subtle: rgba(237, 237, 237, 0.08);
+  --accent-border: rgba(237, 237, 237, 0.15);
+
+  /* Status Colors */
+  --status-success: #10b981;
+  --status-success-bg: rgba(16, 185, 129, 0.12);
+  --status-warning: #f59e0b;
+  --status-warning-bg: rgba(245, 158, 11, 0.12);
+  --status-error: #ef4444;
+  --status-error-bg: rgba(239, 68, 68, 0.12);
+  --status-info: #3b82f6;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.6), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
+  --shadow-glow: none;
+
+  /* Scrollbars */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
+}
+
+:root[data-theme="light"] {
+  /* Surface & Background */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f1f5f9;
+  --bg-tertiary: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-glass: rgba(248, 250, 252, 0.88);
+  --bg-glass-card: rgba(255, 255, 255, 0.85);
+
+  /* Borders & Dividers */
+  --border-subtle: #e2e8f0;
+  --border-medium: #cbd5e1;
+  --border-strong: #94a3b8;
+  --border-focus: #4f46e5;
+
+  /* Typography Colors */
+  --text-primary: #0d0d0d;
+  --text-heading: #000000;
+  --text-secondary: #475569;
+  --text-muted: #8e8e8e;
+  --text-inverse: #ffffff;
+
+  /* Accent Colors */
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-light: #6366f1;
+  --accent-subtle: rgba(79, 70, 229, 0.1);
+  --accent-border: rgba(79, 70, 229, 0.28);
+
+  /* Status Colors */
+  --status-success: #059669;
+  --status-success-bg: rgba(5, 150, 105, 0.1);
+  --status-warning: #d97706;
+  --status-warning-bg: rgba(217, 119, 6, 0.1);
+  --status-error: #dc2626;
+  --status-error-bg: rgba(220, 38, 38, 0.1);
+  --status-info: #2563eb;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.07);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-glow: 0 0 20px rgba(79, 70, 229, 0.18);
+
+  /* Scrollbars */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.16);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
+}
+
+:root {
+  /* Dimensions & Spacing */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 0px;
+  --header-height: 56px;
+  --composer-max-width: 780px;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 240px;
+    --composer-max-width: 680px;
+  }
+}
+
+/* Mobile landscape / small tablet */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: min(300px, 86vw);
+    --header-height: 52px;
+    --composer-max-width: 100%;
+  }
+}
+
+/* Mobile portrait */
+@media (max-width: 480px) {
+  :root {
+    --sidebar-width: min(280px, 90vw);
+    --header-height: 50px;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --composer-max-width: 780px;
+  }
+}
+
+@media (min-width: 1800px) {
+  :root {
+    --composer-max-width: 800px;
+  }
+}
+
+:root {
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-Index Hierarchy */
+  --z-base: 1;
+  --z-header: 10;
+  --z-sidebar: 30;
+  --z-composer: 20;
+  --z-modal-backdrop: 50;
+  --z-modal: 60;
+  --z-tooltip: 100;
+}

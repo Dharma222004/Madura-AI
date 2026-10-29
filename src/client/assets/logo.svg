@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 44" fill="none" class="madura-logo-full">
+  <defs>
+    <linearGradient id="fullLogoGrad" x1="4" y1="4" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="fullCoreGrad" x1="16" y1="12" x2="24" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e0e7ff"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Geometric Symbol -->
+  <g transform="translate(2, 4)">
+    <path d="M6 30V8L15 18V30H6Z" fill="url(#fullLogoGrad)"/>
+    <path d="M30 30V8L21 18V30H30Z" fill="url(#fullLogoGrad)"/>
+    <path d="M15 18L18 22L21 18L18 13L15 18Z" fill="url(#fullCoreGrad)"/>
+    <circle cx="18" cy="17.5" r="2" fill="#ffffff"/>
+    <circle cx="6" cy="8" r="1.8" fill="#c7d2fe"/>
+    <circle cx="30" cy="8" r="1.8" fill="#c7d2fe"/>
+  </g>
+
+  <!-- Madura Wordmark -->
+  <text x="44" y="27" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="currentColor" letter-spacing="-0.03em">Madura</text>
+  
+  <!-- AI Capsule Badge -->
+  <rect x="135" y="11" width="32" height="20" rx="6" fill="#4f46e5" fill-opacity="0.18"/>
+  <rect x="135" y="11" width="32" height="20" rx="6" stroke="#6366f1" stroke-width="1" stroke-opacity="0.4"/>
+  <text x="142" y="25" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700" fill="#818cf8" letter-spacing="0.05em">AI</text>
+</svg>
