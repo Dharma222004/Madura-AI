@@ -1,11 +1,12 @@
 import { AIProvider, ChatCompletionOptions, StreamChatResult } from './provider.interface.js';
 import { ModelInfo } from '../../types/index.js';
+import { DEFAULT_CHAT_MODEL } from './model.config.js';
 
 export const CLEAN_MODELS: ModelInfo[] = [
   {
     id: 'auto',
     name: 'Auto',
-    description: 'Smart default model',
+    description: 'Mistral Large 4',
     contextWindow: 128000,
     supportsVision: false,
     isDefault: true,
@@ -94,7 +95,7 @@ export class NvidiaProvider implements AIProvider {
   }
 
   resolveModel(_modelId?: string): string {
-    const model = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b';
+    const model = process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL;
     if (!model.includes('/') && model.includes('nemotron')) {
       return `nvidia/${model}`;
     }
@@ -103,7 +104,7 @@ export class NvidiaProvider implements AIProvider {
 
   /**
    * Strips reasoning model <think>...</think> tags from streamed content.
-   * GPT-OSS-20B and similar reasoning models emit internal chain-of-thought
+   * Reasoning models emit internal chain-of-thought
    * wrapped in <think> tags that should not be shown to the user.
    */
   private stripThinkTags(text: string): string {

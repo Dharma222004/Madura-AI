@@ -1,12 +1,12 @@
 # Madura AI — Intelligent Conversational Assistant
 
-Madura AI is a modern, full-stack AI assistant inspired by ChatGPT, featuring high-speed streaming, multi-model intelligence (Auto / Nemotron-3 Super 120B, Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Ultron Nemotron), voice-to-text (Groq Whisper), photorealistic image generation, real-time live web search (Tavily), persistent vector memory (Supabase), and multi-key auto-failover resilience.
+Madura AI is a modern, full-stack AI assistant inspired by ChatGPT, featuring high-speed streaming, multi-model intelligence (Auto / Mistral Large 4, Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Ultron Nemotron), voice-to-text (Groq Whisper), photorealistic image generation, real-time live web search (Tavily), persistent vector memory (Supabase), and multi-key auto-failover resilience.
 
 ---
 
 ## 🚀 Features
 
-- **Multi-Model Intelligence**: Auto (Nemotron-3 Super 120B), Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Ultron Nemotron 550B.
+- **Multi-Model Intelligence**: Auto (Mistral Large 4), Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Ultron Nemotron 550B. Auto sends `mistralai/mistral-large-4-1t-a52b` to the NVIDIA NIM API by default.
 - **Multi-Key Auto-Rotation & Fallback**: Support for multiple API keys per provider (`NVIDIA_API_KEYS`, `GEMINI_API_KEYS`, `GROQ_API_KEYS`, `TAVILY_API_KEYS`). Automatic rotation with cooldown upon reaching rate limits (`429`) or quota exhaustion (`401`/`403`).
 - **Live Web Search**: Tavily-powered real-time internet search with smart intent classification and source citation badges.
 - **Voice Transcription**: High-performance voice-to-text with Groq Whisper Large V3 Turbo.
@@ -56,6 +56,7 @@ npm run build
    - **Output Directory**: `dist/client`
 3. In **Project Settings $\rightarrow$ Environment Variables**, add your keys:
    - `NVIDIA_API_KEYS` (or `NVIDIA_API_KEY`)
+   - `NVIDIA_MODEL=mistralai/mistral-large-4-1t-a52b`
    - `GEMINI_API_KEYS` (or `GEMINI_API_KEY`)
    - `GROQ_API_KEYS` (or `GROQ_API_KEY`)
    - `TAVILY_API_KEYS` (or `TAVILY_API_KEY`)

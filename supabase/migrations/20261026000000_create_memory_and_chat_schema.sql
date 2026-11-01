@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     title TEXT NOT NULL DEFAULT 'New Conversation',
-    model TEXT DEFAULT 'openai/gpt-oss-20b',
+    model TEXT DEFAULT 'mistralai/mistral-large-4-1t-a52b',
     pinned BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -54,7 +54,7 @@ export async function getApp(): Promise<Express> {
 
   const chatService = new ChatService(
     storage,
-    multiProvider as any,
+    multiProvider,
     mockProvider,
     searchService,
     ENABLE_MOCK_FALLBACK,
@@ -65,7 +65,7 @@ export async function getApp(): Promise<Express> {
 
   appInstance = createApp({
     storage,
-    nvidiaProvider: multiProvider as any,
+    nvidiaProvider: multiProvider,
     mockProvider,
     documentService,
     chatService,

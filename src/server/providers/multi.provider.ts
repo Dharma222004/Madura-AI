@@ -2,12 +2,13 @@
  * Madura AI — Multi-Provider Gateway
  *
  * Routes each model ID to the correct API key, base URL, and real model name.
- * Default model: GPT-OSS-20B via NVIDIA NIM (displayed in UI as "Auto").
- * Supports Gemini 2.5 Flash, GPT-OSS-120B, DeepSeek V3, Gemma-4, and Nvidia Ultron.
+ * Default model: Mistral Large 4 via NVIDIA NIM (displayed in UI as "Auto").
+ * Supports Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Nvidia Ultron.
  */
 
 import { AIProvider, ChatCompletionOptions, StreamChatResult } from './provider.interface.js';
 import { ModelInfo } from '../../types/index.js';
+import { DEFAULT_CHAT_MODEL } from './model.config.js';
 
 // ── Model Registry ────────────────────────────────────────────────────────────
 
@@ -175,7 +176,7 @@ function resolveProviderKeys(
 }
 
 export function buildModelRegistry(): ModelConfig[] {
-  const nvidiaBase = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+  const nvidiaBase = (process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, '');
 
   const nvidiaKeys = resolveProviderKeys(
     process.env.NVIDIA_API_KEY || '',
@@ -198,20 +199,19 @@ export function buildModelRegistry(): ModelConfig[] {
     false
   );
   return [
-    // 1. Auto (Default Model) — NVIDIA NIM Nemotron-3 Super 120B
+    // 1. Auto (Default Model) — NVIDIA NIM Mistral Large 4
     {
       id: 'auto',
       displayName: 'Auto',
-      realModel: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b',
+      realModel: process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL,
       baseUrl: nvidiaBase,
       apiKey: nvidiaKeys[0] || '',
       apiKeys: nvidiaKeys,
       providerName: 'nvidia',
       isDefault: true,
-      description: 'Nemotron-3 Super 120B',
+      description: 'Mistral Large 4',
       contextWindow: 128000,
       supportsVision: false,
-      isReasoning: true,
       crossProviderFallbackId: 'gemini-flash',
     },
     // 2. Gemini 2.5 Flash — Google Generative Language
@@ -359,7 +359,24 @@ export class MultiModelProvider implements AIProvider {
     signal?: AbortSignal,
     onThoughtChunk?: (thoughtToken: string) => void
   ): Promise<StreamChatResult> {
+    return this.streamChatWithFallback(options, onChunk, signal || options.signal, onThoughtChunk, new Set());
+  }
+
+  private async streamChatWithFallback(
+    options: ChatCompletionOptions,
+    onChunk: (token: string) => void,
+    signal: AbortSignal | undefined,
+    onThoughtChunk: ((thoughtToken: string) => void) | undefined,
+    visitedModels: Set<string>
+  ): Promise<StreamChatResult> {
+    if (signal?.aborted) throw new DOMException('The request was aborted', 'AbortError');
     const cfg = this.getModelConfig(options.model);
+    visitedModels.add(cfg.id);
+    let hasEmittedContent = false;
+    const emitContent = (token: string) => {
+      hasEmittedContent = true;
+      onChunk(token);
+    };
 
     // Build target queue: active key first, then rotated keys from the pool
     const targets: Array<{
@@ -582,6 +599,7 @@ export class MultiModelProvider implements AIProvider {
           let thoughtStartTime: number | null = null;
           let thoughtDurationMs: number | undefined;
           let accumulatedThought = '';
+          let finishReason = 'stop';
 
           const processLine = (line: string): 'done' | 'continue' => {
             const trimmed = line.trim();
@@ -632,6 +650,10 @@ export class MultiModelProvider implements AIProvider {
               }
 
               const choice = parsed.choices?.[0];
+              if (choice?.finish_reason === 'error') {
+                throw new Error(`AI Service Error [${cfg.displayName}/${target.realModel}]: ${choice.message?.content || choice.delta?.content || 'Model generation failed'}`);
+              }
+              if (choice?.finish_reason) finishReason = choice.finish_reason;
               // Reasoning delta (DeepSeek / Qwen / GPT-OSS / Responses API style)
               const reasoningDelta =
                 choice?.delta?.reasoning_content ||
@@ -684,7 +706,7 @@ export class MultiModelProvider implements AIProvider {
                       const newContent = afterThink.slice(lastContentLen);
                       if (newContent) {
                         lastContentLen = afterThink.length;
-                        onChunk(newContent);
+                        emitContent(newContent);
                       }
                       return 'continue';
                     }
@@ -693,11 +715,11 @@ export class MultiModelProvider implements AIProvider {
                     const newContent = rawFullText.slice(lastContentLen);
                     if (newContent) {
                       lastContentLen = rawFullText.length;
-                      onChunk(newContent);
+                      emitContent(newContent);
                     }
                   }
                 } else {
-                  onChunk(delta);
+                  emitContent(delta);
                 }
               }
             } catch (e: any) {
@@ -711,6 +733,9 @@ export class MultiModelProvider implements AIProvider {
 
           const finalize = (reason: string): StreamChatResult => {
             const finalText = isReasoning ? this.stripThinkTags(rawFullText).trim() : rawFullText.trim();
+            if (!finalText && reason !== 'interrupted') {
+              throw new Error(`Empty response from AI service [${cfg.displayName}/${target.realModel}]`);
+            }
             if (!thoughtDurationMs && thoughtStartTime) thoughtDurationMs = Date.now() - thoughtStartTime;
             return {
               fullText: finalText,
@@ -731,14 +756,19 @@ export class MultiModelProvider implements AIProvider {
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             for (const line of lines) {
-              if (processLine(line) === 'done') return finalize('stop');
+              if (processLine(line) === 'done') {
+                reader.cancel().catch(() => { });
+                return finalize(finishReason);
+              }
             }
           }
           if (buffer.trim()) processLine(buffer);
-          return finalize('stop');
+          return finalize(finishReason);
 
         } catch (err: any) {
           if (err.name === 'AbortError' || signal?.aborted) throw err;
+          // Once visible text is delivered, a retry would append a second answer.
+          if (hasEmittedContent) throw err;
           lastError = err;
           const targetIndex = targets.indexOf(target);
           const hasMoreTargets = targetIndex < targets.length - 1;
@@ -760,16 +790,17 @@ export class MultiModelProvider implements AIProvider {
     // ── Cross-provider last-resort fallback ──────────────────────────────────
     if (cfg.crossProviderFallbackId) {
       const fallbackCfg = this.registry.find((m) => m.id === cfg.crossProviderFallbackId);
-      if (fallbackCfg) {
+      if (fallbackCfg && !visitedModels.has(fallbackCfg.id)) {
         console.warn(
           `[MultiModelProvider] All keys for ${cfg.displayName} exhausted. Auto-falling back to cross-provider model: ${fallbackCfg.displayName}`
         );
         try {
-          return await this.streamChat(
+          return await this.streamChatWithFallback(
             { ...options, model: fallbackCfg.id },
             onChunk,
             signal,
-            onThoughtChunk
+            onThoughtChunk,
+            visitedModels
           );
         } catch (fbErr: any) {
           console.warn(`[MultiModelProvider] Cross-provider fallback (${fallbackCfg.displayName}) also failed: ${fbErr.message}`);

@@ -1,13 +1,14 @@
-import base64
+from pathlib import Path
 
-with open('public/logo.png', 'rb') as f:
-    b64 = base64.b64encode(f.read()).decode('utf-8')
+from PIL import Image
 
-svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <image href="data:image/png;base64,{b64}" width="512" height="512" />
-</svg>'''
+public_dir = Path(__file__).resolve().parents[1] / 'public'
+with Image.open(public_dir / 'logo.png') as source:
+    logo = source.convert('RGBA')
+    logo.resize((64, 64), Image.Resampling.LANCZOS).save(public_dir / 'favicon.png')
+    logo.save(
+        public_dir / 'favicon.ico',
+        sizes=[(16, 16), (32, 32), (48, 48), (64, 64)],
+    )
 
-with open('public/favicon.svg', 'w', encoding='utf-8') as f:
-    f.write(svg_content)
-
-print('Updated public/favicon.svg successfully!')
+print('Updated Madura AI browser icons from public/logo.png.')

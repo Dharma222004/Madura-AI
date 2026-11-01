@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NvidiaProvider } from '../src/server/providers/nvidia.provider.js';
 import { MockProvider } from '../src/server/providers/mock.provider.js';
 
 describe('AI Providers', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv('NVIDIA_MODEL', 'mistralai/mistral-large-4-1t-a52b');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe('MockProvider (Local Intelligence Engine)', () => {
@@ -153,6 +158,7 @@ describe('AI Providers', () => {
     });
 
     it('should stream <think> blocks via onThoughtChunk and emit final content via onChunk', async () => {
+      vi.stubEnv('NVIDIA_MODEL', 'nvidia/nemotron-3-super-120b-a12b');
       const mockSseBody = new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();

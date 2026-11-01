@@ -3,7 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { StorageInterface } from './store/storage.interface.js';
-import { NvidiaProvider } from './providers/nvidia.provider.js';
+import { AIProvider } from './providers/provider.interface.js';
 import { MockProvider } from './providers/mock.provider.js';
 import { ChatService } from './services/chat.service.js';
 import { DocumentService } from './services/document.service.js';
@@ -23,7 +23,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 export interface AppDependencies {
   storage: StorageInterface;
-  nvidiaProvider: NvidiaProvider;
+  nvidiaProvider: AIProvider;
   mockProvider: MockProvider;
   documentService: DocumentService;
   chatService: ChatService;

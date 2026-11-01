@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { StorageInterface } from '../store/storage.interface.js';
 import { AIProvider } from '../providers/provider.interface.js';
-import { NvidiaProvider } from '../providers/nvidia.provider.js';
 import { MockProvider } from '../providers/mock.provider.js';
 import { SearchService } from './search.service.js';
 import { ImageService } from './image.service.js';
@@ -23,7 +22,7 @@ function sanitizeModelOutput(text: string): string {
 
 export class ChatService {
   private storage: StorageInterface;
-  private nvidiaProvider: NvidiaProvider;
+  private nvidiaProvider: AIProvider;
   private mockProvider: MockProvider;
   private searchService: SearchService;
   private imageService: ImageService;
@@ -34,7 +33,7 @@ export class ChatService {
 
   constructor(
     storage: StorageInterface,
-    nvidiaProvider: NvidiaProvider,
+    nvidiaProvider: AIProvider,
     mockProvider: MockProvider,
     searchService: SearchService = new SearchService(),
     enableMockFallback: boolean = true,
@@ -422,7 +421,7 @@ Guidelines:
         console.warn(`[ChatService] Primary AI provider notice: ${upstreamErr.message}`);
         if (controller.signal.aborted) {
           finalStatus = 'interrupted';
-        } else if (this.enableMockFallback || settings.useMockFallback) {
+        } else if (!generatedText.trim() && (this.enableMockFallback || settings.useMockFallback)) {
           // Seamless, silent fallback to local intelligence engine
           const fallbackResult = await this.mockProvider.streamChat(
             {
