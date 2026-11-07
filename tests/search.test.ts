@@ -65,6 +65,128 @@ describe('SearchService & Live Data Classifier', () => {
     expect(service.needsLiveSearch('What is photosynthesis?', true)).toBe(true);
   });
 
+  // ── Search Query Extraction Tests ──
+
+  it('should extract focused query from structured Indian market prompt', () => {
+    const structuredPrompt = `Web search STEP 1 — Data Collection (Run First, Daily After Indian Market Close)
+Fetch today's official Indian market closing data using trusted live sources.
+Primary Sources
+NSE India
+BSE India
+NSE Indices
+Moneycontrol
+TradingView
+Investing.com
+Yahoo Finance
+Gold & Silver Prices
+Fetch today's India bullion prices from Goodreturns:
+24 Carat Gold Price (₹ per 10 grams)
+22 Carat Gold Price (₹ per 10 grams)
+Silver Price (₹ per kg)
+Collect the following data:
+Market Indices
+NIFTY 50
+Current Value
+Point Change
+Percentage Change
+SENSEX
+Current Value
+Point Change
+Percentage Change
+BANK NIFTY
+Current Value
+Point Change
+Percentage Change
+INDIA VIX
+Current Value
+Point Change
+Percentage Change
+Top Gainers (NIFTY 50)
+Collect:
+Rank
+Company Name
+Last Traded Price (₹)
+% Gain
+Top 5 only.
+Top Losers (NIFTY 50)
+FII Net Buy/Sell (₹ Crore)
+DII Net Buy/Sell (₹ Crore)
+Precious Metals
+24 Carat Gold Price
+Silver Price
+Market Sentiment
+Bullish Bearish Neutral
+today`;
+
+    const result = service.extractCleanSearchQuery(structuredPrompt);
+
+    // Should NOT be "Data Collection" or the full raw prompt
+    expect(result).not.toContain('Data Collection');
+    expect(result).not.toContain('STEP 1');
+    expect(result).not.toContain('Primary Sources');
+    expect(result).not.toContain('Collect');
+
+    // Should contain actual financial domain keywords
+    expect(result.toLowerCase()).toMatch(/nifty|sensex|market/i);
+    // Should be reasonably short (fits in search pill UI)
+    expect(result.length).toBeLessThanOrEqual(120);
+    expect(result.length).toBeGreaterThan(10);
+  });
+
+  it('should handle short direct search queries unchanged', () => {
+    expect(service.extractCleanSearchQuery('NIFTY 50 today')).toBe('NIFTY 50 today');
+    expect(service.extractCleanSearchQuery('weather in Tokyo')).toBe('weather in Tokyo');
+    expect(service.extractCleanSearchQuery('bitcoin price')).toBe('bitcoin price');
+  });
+
+  it('should clean conversational prefixes from short queries', () => {
+    expect(service.extractCleanSearchQuery('search for best laptops 2026')).toBe('best laptops 2026');
+    expect(service.extractCleanSearchQuery('please search the web for AI news')).toBe('AI news');
+    expect(service.extractCleanSearchQuery('google latest iPhone release')).toBe('latest iPhone release');
+  });
+
+  it('should extract weather-related query from structured prompt', () => {
+    const weatherPrompt = `STEP 1: Data Fetching
+Fetch the following weather data:
+Temperature in Delhi
+Humidity levels
+Rainfall prediction today
+Wind speed and direction
+AQI (Air Quality Index)
+Weather warnings if any
+Collect:
+Max Temperature
+Min Temperature
+Feels Like
+UV Index`;
+
+    const result = service.extractCleanSearchQuery(weatherPrompt);
+    expect(result.toLowerCase()).toMatch(/weather|temperature|delhi/i);
+    expect(result).not.toContain('STEP 1');
+    expect(result).not.toContain('Data Fetching');
+    expect(result.length).toBeLessThanOrEqual(120);
+  });
+
+  it('should extract crypto-related query from structured prompt', () => {
+    const cryptoPrompt = `Web search: Crypto Market Analysis
+Fetch the following:
+- Bitcoin (BTC) current price
+- Ethereum (ETH) current price
+- Market cap data
+- Top gainers today
+- Trading volume 24h
+Collect live data from CoinGecko, CoinMarketCap`;
+
+    const result = service.extractCleanSearchQuery(cryptoPrompt);
+    expect(result.toLowerCase()).toMatch(/bitcoin|btc|ethereum|crypto/i);
+    expect(result.length).toBeLessThanOrEqual(120);
+  });
+
+  it('should return empty string for empty input', () => {
+    expect(service.extractCleanSearchQuery('')).toBe('');
+    expect(service.extractCleanSearchQuery('   ')).toBe('');
+  });
+
   it('should execute search and format results properly', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,

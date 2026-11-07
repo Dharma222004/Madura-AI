@@ -182,7 +182,9 @@ export const MessageItem = React.memo<MessageItemProps>(
                           Searched {message.searchSources.length} source{message.searchSources.length === 1 ? '' : 's'}
                         </span>
                         {message.searchQuery && (
-                          <span className="search-query-tag">"{message.searchQuery}"</span>
+                          <span className="search-query-tag" title={message.searchQuery}>
+                            "{message.searchQuery.length > 60 ? `${message.searchQuery.slice(0, 57)}...` : message.searchQuery}"
+                          </span>
                         )}
                       </div>
                       <span className="search-toggle-chevron">

@@ -54,43 +54,149 @@ export class SearchService {
 
   /**
    * Cleans and distills long or multi-line user prompts into a focused, high-relevance search query.
-   * Prevents sending giant multi-paragraph prompt instructions to the search engine.
+   * Handles structured/instructional prompts by scanning ALL content for domain keywords
+   * and synthesizing a concise, relevant search query. Never returns meta-labels like
+   * "Data Collection", "STEP 1", etc.
    */
   extractCleanSearchQuery(prompt: string): string {
     if (!prompt) return '';
     const clean = prompt.trim();
 
     // If query is already short and single-line, clean common conversational prefixes
-    if (clean.length <= 90 && !clean.includes('\n')) {
-      return clean.replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|search\s+for|google|look\s+up)\s+/i, '').trim();
+    if (clean.length <= 120 && !clean.includes('\n')) {
+      return clean
+        .replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|search\s+for|google|look\s+up|web\s+search)\s+/i, '')
+        .trim();
     }
 
-    // Split into non-empty lines
+    // ── Detect structured / instructional prompts ──
+    // These have numbered lists, "Collect:", "Fetch:", section headers, bullets, etc.
+    const lowerClean = clean.toLowerCase();
+    const isStructured =
+      (clean.split('\n').length > 5) ||
+      /\b(step\s*\d|collect[:\s]|fetch[:\s]|primary\s+sources|must\s+fetch|must\s+use)\b/i.test(clean) ||
+      /^\s*[\-\*\u2022\u25AA]\s/m.test(clean) || // bullet points
+      /^\s*\d+[.)]\s/m.test(clean); // numbered lists
+
+    if (isStructured) {
+      // ── Domain keyword extraction ──
+      // Scan ALL text for meaningful topic keywords across known domains
+      const domainPatterns: { category: string; pattern: RegExp; priority: number }[] = [
+        // Indian stock market indices
+        { category: 'market', pattern: /\b(NIFTY\s*50|NIFTY)\b/gi, priority: 10 },
+        { category: 'market', pattern: /\b(SENSEX)\b/gi, priority: 10 },
+        { category: 'market', pattern: /\b(BANK\s*NIFTY)\b/gi, priority: 8 },
+        { category: 'market', pattern: /\b(INDIA\s*VIX)\b/gi, priority: 7 },
+        { category: 'market', pattern: /\b(NSE|BSE)\b/g, priority: 6 },
+        // Financial terms
+        { category: 'finance', pattern: /\b(stock\s*market|share\s*price|market\s*closing|closing\s*data)\b/gi, priority: 9 },
+        { category: 'finance', pattern: /\b(FII|DII|institutional\s*activity)\b/gi, priority: 5 },
+        { category: 'finance', pattern: /\b(top\s*gainers?|top\s*losers?|market\s*breadth)\b/gi, priority: 5 },
+        { category: 'finance', pattern: /\b(sector\s*performance)\b/gi, priority: 4 },
+        // Commodities
+        { category: 'commodity', pattern: /\b(gold\s*price|silver\s*price|bullion|precious\s*metals?)\b/gi, priority: 7 },
+        { category: 'commodity', pattern: /\b(crude\s*oil|brent|wti)\b/gi, priority: 7 },
+        // Crypto
+        { category: 'crypto', pattern: /\b(bitcoin|btc|ethereum|eth|crypto(?:currency)?)\b/gi, priority: 8 },
+        // Weather
+        { category: 'weather', pattern: /\b(weather|temperature|forecast|rain|humidity|climate)\b/gi, priority: 8 },
+        // Sports
+        { category: 'sports', pattern: /\b(match\s*score|cricket|football|IPL|FIFA|tennis|world\s*cup|championship)\b/gi, priority: 8 },
+        // Elections / Politics
+        { category: 'politics', pattern: /\b(election|voting|poll\s*results?|prime\s*minister|president)\b/gi, priority: 8 },
+        // Technology / Product
+        { category: 'tech', pattern: /\b(latest\s+release|new\s+version|update|launch|announcement)\b/gi, priority: 6 },
+        // Country/region context
+        { category: 'region', pattern: /\b(India|Indian|US|USA|China|UK|Japan|Europe)\b/gi, priority: 3 },
+        // Temporal markers
+        { category: 'temporal', pattern: /\b(today|yesterday|this\s+week|this\s+month|current|live|real[\s-]?time|closing)\b/gi, priority: 2 },
+      ];
+
+      // Collect unique keyword hits with their priority
+      const hits: { text: string; priority: number; category: string }[] = [];
+      const seenLower = new Set<string>();
+
+      for (const dp of domainPatterns) {
+        let match: RegExpExecArray | null;
+        // Reset lastIndex for each global regex
+        dp.pattern.lastIndex = 0;
+        while ((match = dp.pattern.exec(clean)) !== null) {
+          const raw = match[0].trim();
+          const key = raw.toLowerCase().replace(/\s+/g, ' ');
+          if (!seenLower.has(key)) {
+            seenLower.add(key);
+            hits.push({ text: raw, priority: dp.priority, category: dp.category });
+          }
+        }
+      }
+
+      if (hits.length > 0) {
+        // Sort by priority (highest first), take top keywords
+        hits.sort((a, b) => b.priority - a.priority);
+
+        // Build query: pick region context + top ~5 domain terms + temporal
+        const regionHits = hits.filter(h => h.category === 'region');
+        const temporalHits = hits.filter(h => h.category === 'temporal');
+        const topicHits = hits.filter(h => h.category !== 'region' && h.category !== 'temporal');
+
+        const parts: string[] = [];
+
+        // Add region context (first one)
+        if (regionHits.length > 0) {
+          parts.push(regionHits[0].text);
+        }
+
+        // Add top domain keywords (up to 6)
+        const usedTexts = new Set<string>();
+        for (const h of topicHits) {
+          if (usedTexts.size >= 6) break;
+          const normalized = h.text.toLowerCase().replace(/\s+/g, ' ');
+          if (!usedTexts.has(normalized)) {
+            usedTexts.add(normalized);
+            parts.push(h.text);
+          }
+        }
+
+        // Add temporal context (first one, e.g. "today")
+        if (temporalHits.length > 0) {
+          parts.push(temporalHits[0].text);
+        }
+
+        const query = parts.join(' ').replace(/\s+/g, ' ').trim();
+        // Clamp to 120 chars
+        if (query.length > 120) {
+          return query.slice(0, 117).trim() + '...';
+        }
+        return query || clean.slice(0, 90).trim();
+      }
+    }
+
+    // ── Fallback: line-scanning approach for non-structured prompts ──
     const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
     let target = lines[0] || '';
 
     // Search for a line mentioning explicit search directives or live data topics
     for (const line of lines) {
-      if (/\b(fetch|search|closing data|price|market|news|latest|today|indices|nifty|sensex|stock)\b/i.test(line)) {
+      if (/\b(fetch|search|closing data|price|market|news|latest|today|indices|nifty|sensex|stock|weather|score)\b/i.test(line)) {
         target = line;
         break;
       }
     }
 
-    // Strip instructional headers like "Web search STEP 1 — Data Collection (Run First...)"
+    // Strip instructional headers
     target = target.replace(/^(web\s+search\s*(step\s*\d+)?\s*[\u2014\-–:]*)/i, '');
     target = target.replace(/^(data\s+collection\s*[\u2014\-–:]*)/i, '');
     target = target.replace(/\((run\s+first|daily|after|before)[\w\s,]*\)/gi, '');
     target = target.replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|search\s+for|fetch|find|look\s+up|get)\s+/i, '');
     target = target.trim();
 
-    // Take the first complete sentence of the targeted line if it has punctuation
+    // Take the first complete sentence
     const sentenceMatch = target.match(/^([^.?!]+)/);
     if (sentenceMatch && sentenceMatch[1] && sentenceMatch[1].trim().length > 10) {
       target = sentenceMatch[1].trim();
     }
 
-    // Clamp to maximum ~120 characters so it fits neatly into search engines and UI status pills
+    // Clamp to 120 chars
     if (target.length > 120) {
       target = target.slice(0, 117).trim() + '...';
     }
