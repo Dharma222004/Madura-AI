@@ -29,8 +29,8 @@ async function initMermaid() {
     themeVariables: {
       darkMode: true,
       background: '#06090f',
-      mainBkg: '#0d131f',
-      textColor: '#f1f5f9',
+      mainBkg: '#dbeafe',
+      textColor: '#0f172a',
       lineColor: '#94a3b8',
 
       // Primary pastel styling
@@ -46,7 +46,7 @@ async function initMermaid() {
       tertiaryTextColor: '#064e3b',
       tertiaryBorderColor: '#86efac',
 
-      nodeBorder: '#94a3b8',
+      nodeBorder: '#93c5fd',
       clusterBkg: 'rgba(255, 255, 255, 0.03)',
       clusterBorder: 'rgba(255, 255, 255, 0.12)',
       titleColor: '#f8fafc',
@@ -174,38 +174,54 @@ function enhanceSvgDiagram(svgEl: SVGSVGElement) {
     const labelDiv = fo?.firstElementChild as HTMLElement | null;
     const svgText = node.querySelector<SVGTextElement>('text');
 
-    // Make rects rounded pills like reference Image 3
-    if (shape && shape.tagName.toLowerCase() === 'rect') {
-      shape.setAttribute('rx', '10');
-      shape.setAttribute('ry', '10');
+    // Check if the element has an explicit user-defined custom color
+    // (Mermaid default theme injects #0d131f, #dbeafe, #ececff, etc.)
+    const inlineStyle = shape?.getAttribute('style') || '';
+    const hasExplicitCustomFill =
+      inlineStyle.includes('fill:') &&
+      !inlineStyle.includes('#0d131f') &&
+      !inlineStyle.includes('rgb(13, 19, 31)') &&
+      !inlineStyle.includes('#dbeafe') &&
+      !inlineStyle.includes('rgb(219, 234, 254)') &&
+      !inlineStyle.includes('#ececff') &&
+      !inlineStyle.includes('rgb(236, 236, 255)') &&
+      !inlineStyle.includes('rgb(26, 26, 26)') &&
+      !inlineStyle.includes('#1a1a1a') &&
+      !inlineStyle.includes('#111111');
 
-      const inlineStyle = shape.getAttribute('style') || '';
-      const hasCustomFill =
-        inlineStyle.includes('fill:') &&
-        !inlineStyle.includes('fill: rgb(26, 26, 26)') &&
-        !inlineStyle.includes('fill: #1a1a1a') &&
-        !inlineStyle.includes('fill: #111111') &&
-        !inlineStyle.includes('fill: #dbeafe');
-
-      if (!hasCustomFill) {
-        shape.setAttribute('fill', palette.fill);
-        shape.setAttribute('stroke', palette.stroke);
-        shape.setAttribute('stroke-width', '1.5');
-        shape.style.filter = 'drop-shadow(0 2px 5px rgba(0, 0, 0, 0.2))';
+    if (shape && !hasExplicitCustomFill) {
+      if (shape.tagName.toLowerCase() === 'rect') {
+        shape.setAttribute('rx', '10');
+        shape.setAttribute('ry', '10');
       }
+      // Apply pastel fill and stroke with !important on inline style to override Mermaid's defaults
+      shape.style.setProperty('fill', palette.fill, 'important');
+      shape.style.setProperty('stroke', palette.stroke, 'important');
+      shape.style.setProperty('stroke-width', '1.5px', 'important');
+      shape.setAttribute('fill', palette.fill);
+      shape.setAttribute('stroke', palette.stroke);
+      shape.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))';
     }
 
-    // High-contrast, clean typography inside nodes
+    // High-contrast, clean typography inside nodes matching the pastel palette
     if (labelDiv) {
-      labelDiv.style.color = palette.text;
-      labelDiv.style.fontWeight = '600';
-      labelDiv.style.fontSize = '13.5px';
-      labelDiv.style.lineHeight = '1.35';
+      labelDiv.style.setProperty('color', palette.text, 'important');
+      labelDiv.style.setProperty('font-weight', '600', 'important');
+      labelDiv.style.setProperty('font-size', '13.5px', 'important');
+      labelDiv.style.setProperty('line-height', '1.35', 'important');
+
+      // Style any nested spans, p, strong, div elements inside foreignObject
+      const childTexts = labelDiv.querySelectorAll<HTMLElement>('*');
+      childTexts.forEach((el) => {
+        el.style.setProperty('color', palette.text, 'important');
+        el.style.setProperty('font-weight', '600', 'important');
+      });
     }
     if (svgText) {
+      svgText.style.setProperty('fill', palette.text, 'important');
+      svgText.style.setProperty('font-weight', '600', 'important');
+      svgText.style.setProperty('font-size', '13.5px', 'important');
       svgText.setAttribute('fill', palette.text);
-      svgText.style.fontWeight = '600';
-      svgText.style.fontSize = '13.5px';
     }
 
     // ZERO TEXT CLIPPING FIX:
@@ -378,7 +394,10 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, title }) => {
   }, [code]);
 
   useEffect(() => {
-    renderDiagram();
+    const timer = setTimeout(() => {
+      renderDiagram();
+    }, 120);
+    return () => clearTimeout(timer);
   }, [renderDiagram]);
 
   // Apply visual enhancements (pastel palette, rounded pill rects, clipping prevention) as soon as SVG mounts
@@ -387,6 +406,12 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, title }) => {
     const svgEl = containerRef.current.querySelector('svg');
     if (svgEl) {
       enhanceSvgDiagram(svgEl);
+      // Run once more in next animation frame to account for font loading and text layout metrics
+      requestAnimationFrame(() => {
+        if (svgEl.isConnected) {
+          enhanceSvgDiagram(svgEl);
+        }
+      });
     }
   }, [svgContent]);
 
@@ -404,8 +429,10 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, title }) => {
   };
 
   const handleDownloadSVG = () => {
-    if (!svgContent) return;
-    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    if (!containerRef.current) return;
+    const svgEl = containerRef.current.querySelector('svg');
+    if (!svgEl) return;
+    const blob = new Blob([svgEl.outerHTML], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -415,21 +442,21 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, title }) => {
   };
 
   const handleDownloadPNG = async () => {
-    if (!svgContent || !containerRef.current) return;
+    if (!containerRef.current) return;
     const svgEl = containerRef.current.querySelector('svg');
     if (!svgEl) return;
     const canvas = document.createElement('canvas');
     const scale = 2;
     const bbox = svgEl.getBoundingClientRect();
-    canvas.width = bbox.width * scale;
-    canvas.height = bbox.height * scale;
+    canvas.width = Math.max(bbox.width * scale, 400);
+    canvas.height = Math.max(bbox.height * scale, 300);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.scale(scale, scale);
     ctx.fillStyle = '#06090f'; // Dark canvas matching diagram viewport
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const img = new Image();
-    const svgBlob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+    const svgBlob = new Blob([svgEl.outerHTML], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     img.onload = () => {
       ctx.drawImage(img, 0, 0);
@@ -460,7 +487,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, title }) => {
           <span className="mermaid-diagram-badge">MERMAID</span>
           {usedSanitized && (
             <span className="mermaid-diagram-badge" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)' }}>
-              AUTO-FIXED
+              Fixed
             </span>
           )}
         </div>

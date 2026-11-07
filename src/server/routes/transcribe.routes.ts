@@ -22,7 +22,7 @@ export function createTranscribeRouter(
   const authenticateUser = async (
     req: Request
   ): Promise<{ authenticated: boolean; userId?: string }> => {
-    // Check Supabase bearer token
+    // Check user bearer token
     const authHeader = req.headers.authorization;
     if (authHeader && supabaseService) {
       const verifiedId = await supabaseService.verifyUserToken(authHeader);
@@ -149,6 +149,26 @@ export function createTranscribeRouter(
       }
 
       res.status(500).json({ error: rawMsg });
+    }
+  });
+
+  /**
+   * POST /api/transcribe/tts
+   * Accepts JSON { text: string }
+   * Uses Cloudflare Workers AI @cf/deepgram/aura-2-es
+   */
+  router.post('/tts', async (req: Request, res: Response) => {
+    try {
+      const text = req.body?.text;
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        res.status(400).json({ error: 'Text is required for speech synthesis.' });
+        return;
+      }
+      const result = await speechService.synthesizeSpeech(text.trim());
+      res.setHeader('Content-Type', result.mimeType);
+      res.send(result.audioBuffer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Text-to-speech synthesis failed.' });
     }
   });
 

@@ -17,6 +17,59 @@ export function useChat(
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentAssistantIdRef = useRef<string | null>(null);
 
+  // High-performance token stream buffering (RAF batching) to keep UI and scrolling at 60/120 FPS
+  const streamBufferRef = useRef<{ content: string; thought: string }>({ content: '', thought: '' });
+  const rafIdRef = useRef<number | null>(null);
+  const messagesRef = useRef<Message[]>(messages);
+  messagesRef.current = messages;
+
+  const flushStreamBuffer = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    const chunkContent = streamBufferRef.current.content;
+    const chunkThought = streamBufferRef.current.thought;
+    if (!chunkContent && !chunkThought) return;
+
+    // Reset buffer
+    streamBufferRef.current.content = '';
+    streamBufferRef.current.thought = '';
+
+    const targetId = currentAssistantIdRef.current;
+    if (!targetId) return;
+
+    setMessages(prev =>
+      prev.map(m => {
+        if (m.id !== targetId) return m;
+        return {
+          ...m,
+          content: chunkContent ? m.content + chunkContent : m.content,
+          thought: chunkThought ? (m.thought || '') + chunkThought : m.thought,
+        };
+      })
+    );
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        flushStreamBuffer();
+      });
+    }
+  }, [flushStreamBuffer]);
+
+  // Clean up RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, []);
+
   // Load messages when active conversation changes
   useEffect(() => {
     if (!activeConversationId) {
@@ -64,6 +117,7 @@ export function useChat(
     if (activeConversationId) {
       api.abortActiveChat(activeConversationId);
     }
+    flushStreamBuffer();
     setIsStreaming(false);
 
     // Mark current assistant message as interrupted
@@ -76,7 +130,7 @@ export function useChat(
         )
       );
     }
-  }, [activeConversationId]);
+  }, [activeConversationId, flushStreamBuffer]);
 
   const [isSearching, setIsSearching] = useState(false);
 
@@ -90,6 +144,13 @@ export function useChat(
       setIsSearching(false);
       const activeAttachments = overrideAttachments || attachments;
       setAttachments([]); // Clear composer attachments
+
+      // Reset stream buffers
+      streamBufferRef.current = { content: '', thought: '' };
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
 
       // Generate optimistic IDs
       const tempUserMsgId = `user-${Date.now()}`;
@@ -145,22 +206,12 @@ export function useChat(
           );
         },
         onThoughtToken: (token) => {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === tempAssistantMsgId
-                ? { ...m, thought: (m.thought || '') + token }
-                : m
-            )
-          );
+          streamBufferRef.current.thought += token;
+          scheduleFlush();
         },
         onToken: (token) => {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === tempAssistantMsgId
-                ? { ...m, content: m.content + token }
-                : m
-            )
-          );
+          streamBufferRef.current.content += token;
+          scheduleFlush();
         },
         onTitle: (generatedTitle: string, titleConvId: string) => {
           // Use the conversationId from the event (works for both new & existing convs)
@@ -170,6 +221,7 @@ export function useChat(
           }
         },
         onDone: (data) => {
+          flushStreamBuffer();
           setIsStreaming(false);
           setIsSearching(false);
           abortControllerRef.current = null;
@@ -192,6 +244,7 @@ export function useChat(
           });
         },
         onError: (streamError) => {
+          flushStreamBuffer();
           setIsStreaming(false);
           abortControllerRef.current = null;
           setError(streamError);
@@ -207,35 +260,37 @@ export function useChat(
 
       abortControllerRef.current = controller;
     },
-    [activeConversationId, activeModel, attachments, onConversationCreated, onTitleUpdated]
+    [activeConversationId, activeModel, attachments, onConversationCreated, onTitleUpdated, flushStreamBuffer, scheduleFlush]
   );
 
   const regenerateResponse = useCallback(
     async (assistantMessageId: string) => {
-      const idx = messages.findIndex(m => m.id === assistantMessageId);
+      const currentList = messagesRef.current;
+      const idx = currentList.findIndex(m => m.id === assistantMessageId);
       if (idx <= 0) return;
 
-      const previousUserMsg = messages[idx - 1];
+      const previousUserMsg = currentList[idx - 1];
       if (previousUserMsg.role !== 'user') return;
 
       // Remove the assistant message and resend
       setMessages(prev => prev.filter(m => m.id !== assistantMessageId));
       await sendMessage(previousUserMsg.content, previousUserMsg.attachments);
     },
-    [messages, sendMessage]
+    [sendMessage]
   );
 
   const editAndResubmit = useCallback(
     async (userMessageId: string, newContent: string) => {
-      const idx = messages.findIndex(m => m.id === userMessageId);
+      const currentList = messagesRef.current;
+      const idx = currentList.findIndex(m => m.id === userMessageId);
       if (idx < 0) return;
 
-      const userMsg = messages[idx];
+      const userMsg = currentList[idx];
       // Truncate all subsequent messages after this user message
       setMessages(prev => prev.slice(0, idx));
       await sendMessage(newContent, userMsg.attachments);
     },
-    [messages, sendMessage]
+    [sendMessage]
   );
 
   const addAttachment = (att: Attachment) => {

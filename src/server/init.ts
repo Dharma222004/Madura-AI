@@ -34,7 +34,14 @@ export async function getApp(): Promise<Express> {
   const storage = new FileStore(DATA_DIR);
   await storage.init();
 
-  const ragService = new RAGService();
+  const embeddingService = new EmbeddingService(
+    NVIDIA_API_KEYS,
+    NVIDIA_BASE_URL,
+    process.env.NVIDIA_EMBEDDING_MODEL || 'nvidia/nemotron-3.5-embed-8b',
+    parseInt(process.env.NVIDIA_EMBEDDING_DIM || '4096', 10)
+  );
+
+  const ragService = new RAGService(embeddingService);
   const speechService = new SpeechService(GROQ_API_KEYS, GROQ_WHISPER_MODEL, NVIDIA_API_KEYS, NVIDIA_BASE_URL);
   const imageService = new ImageService(NVIDIA_API_KEYS, NVIDIA_BASE_URL);
   const nvidiaProvider = new NvidiaProvider(NVIDIA_API_KEYS, NVIDIA_BASE_URL);
@@ -42,13 +49,6 @@ export async function getApp(): Promise<Express> {
   const mockProvider = new MockProvider(ragService);
   const searchService = new SearchService(TAVILY_API_KEYS);
   const documentService = new DocumentService(MAX_UPLOAD_MB, ragService, speechService);
-
-  const embeddingService = new EmbeddingService(
-    NVIDIA_API_KEYS,
-    NVIDIA_BASE_URL,
-    process.env.NVIDIA_EMBEDDING_MODEL || 'nvidia/nemotron-3.5-embed-1b',
-    parseInt(process.env.NVIDIA_EMBEDDING_DIM || '2048', 10)
-  );
   const supabaseService = new SupabaseService({ dataDir: DATA_DIR });
   const memoryService = new MemoryService(supabaseService, embeddingService, nvidiaProvider);
 

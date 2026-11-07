@@ -1,6 +1,6 @@
 /**
  * EmbeddingService — Generates semantic embeddings using NVIDIA NIM API
- * Model: nvidia/nemotron-3.5-embed-1b (dimension: 2048)
+ * Model: nvidia/nemotron-3.5-embed-8b (8B multimodal embedding model for RAG)
  */
 export class EmbeddingService {
   private apiKeys: string[] = [];
@@ -12,8 +12,8 @@ export class EmbeddingService {
   constructor(
     apiKeyOrKeys: string | string[] = process.env.NVIDIA_API_KEYS || process.env.NVIDIA_API_KEY || '',
     baseUrl: string = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
-    model: string = process.env.NVIDIA_EMBEDDING_MODEL || 'nvidia/nemotron-3.5-embed-1b',
-    dimension: number = parseInt(process.env.NVIDIA_EMBEDDING_DIM || '2048', 10)
+    model: string = process.env.NVIDIA_EMBEDDING_MODEL || 'nvidia/nemotron-3.5-embed-8b',
+    dimension: number = parseInt(process.env.NVIDIA_EMBEDDING_DIM || '4096', 10)
   ) {
     const raw: string[] = [];
     if (Array.isArray(apiKeyOrKeys)) {
@@ -122,6 +122,46 @@ export class EmbeddingService {
           `[EmbeddingService] NVIDIA embedding key #${keyIndex + 1} network exception: ${err.message}. Auto-switching to next key...`
         );
         this.currentKeyIndex = (keyIndex + 1) % totalKeys;
+      }
+    }
+
+    // 2. Cloudflare Plamo Embedding fallback (@cf/pfnet/plamo-embedding-1b)
+    // Automatically invoked if NVIDIA embedding keys fail or are exhausted
+    const hasMockKey = this.apiKeys.some((k) => k.includes('mock'));
+    if (process.env.NODE_ENV !== 'test' && !hasMockKey) {
+      const cfKey = process.env.CLOUDFLARE_API_KEY || '';
+      const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+      if (cfKey && cfAccountId) {
+        try {
+          const ctrl = new AbortController();
+          const tId = setTimeout(() => ctrl.abort(), 6000);
+          const cfResponse = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/pfnet/plamo-embedding-1b`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${cfKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                text: cleanTexts,
+              }),
+              signal: ctrl.signal,
+            }
+          );
+          clearTimeout(tId);
+
+          if (cfResponse.ok) {
+            const cfJson = (await cfResponse.json()) as any;
+            const data = cfJson.result?.data || cfJson.data;
+            if (Array.isArray(data)) {
+              console.log('[EmbeddingService] Successfully generated embeddings using Cloudflare Plamo-1B (@cf/pfnet/plamo-embedding-1b)');
+              return data;
+            }
+          }
+        } catch (cfErr: any) {
+          console.warn(`[EmbeddingService] Cloudflare Plamo embedding fallback exception: ${cfErr.message}`);
+        }
       }
     }
 

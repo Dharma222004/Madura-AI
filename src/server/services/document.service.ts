@@ -43,6 +43,7 @@ export class DocumentService {
 
     const ext = path.extname(originalName).toLowerCase();
     let extractedText = '';
+    let previewUrl: string | undefined;
 
     try {
       if (ext === '.pdf' || mimeType === 'application/pdf') {
@@ -67,8 +68,20 @@ export class DocumentService {
         ext === '.jpg' ||
         ext === '.jpeg' ||
         ext === '.webp' ||
+        ext === '.gif' ||
+        ext === '.bmp' ||
         mimeType.startsWith('image/')
       ) {
+        const detectedMime = mimeType.startsWith('image/')
+          ? mimeType
+          : ext === '.png'
+          ? 'image/png'
+          : ext === '.webp'
+          ? 'image/webp'
+          : ext === '.gif'
+          ? 'image/gif'
+          : 'image/jpeg';
+        previewUrl = `data:${detectedMime};base64,${fileBuffer.toString('base64')}`;
         extractedText = `[Image: ${originalName} (${(fileBuffer.length / 1024).toFixed(1)} KB)]`;
       } else if (
         ext === '.mp3' ||
@@ -109,6 +122,7 @@ export class DocumentService {
       fileSize: fileBuffer.length,
       mimeType,
       extractedText,
+      previewUrl,
     };
   }
 

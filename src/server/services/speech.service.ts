@@ -233,4 +233,45 @@ export class SpeechService {
       durationEstimateSec,
     };
   }
+
+  /**
+   * Synthesizes text to speech using Cloudflare Workers AI model @cf/deepgram/aura-2-es.
+   * Returns audio buffer and content type.
+   */
+  async synthesizeSpeech(text: string): Promise<{ audioBuffer: Buffer; mimeType: string }> {
+    const cfKey = process.env.CLOUDFLARE_API_KEY || '';
+    const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+
+    if (!cfAccountId) {
+      throw new Error(
+        'Cloudflare Account ID is required for text-to-speech. Please set CLOUDFLARE_ACCOUNT_ID in .env (found in Cloudflare dashboard > Workers & Pages).'
+      );
+    }
+
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/deepgram/aura-2-es`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cfKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: text.slice(0, 2000),
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`Cloudflare TTS failed (${response.status}): ${errText}`);
+    }
+
+    const arrayBuf = await response.arrayBuffer();
+    const mimeType = response.headers.get('content-type') || 'audio/wav';
+    return {
+      audioBuffer: Buffer.from(arrayBuf),
+      mimeType,
+    };
+  }
 }

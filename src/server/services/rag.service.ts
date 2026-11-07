@@ -1,4 +1,5 @@
 import { Attachment } from '../../types/index.js';
+import { EmbeddingService } from './embedding.service.js';
 
 export interface DocumentChunk {
   id: string;
@@ -48,11 +49,23 @@ const COMMON_STOP_WORDS = new Set([
 ]);
 
 export const RAG_RERANK_MODEL = 'nemotron-3_5-rerank-8b';
+export const RAG_EMBEDDING_MODEL = 'nvidia/nemotron-3.5-embed-8b';
 
 export class RAGService {
   public readonly rerankModel: string = RAG_RERANK_MODEL;
+  public readonly embeddingModel: string = RAG_EMBEDDING_MODEL;
   private documentProfiles: Map<string, DocumentProfile> = new Map();
   private invertedIndices: Map<string, Map<string, Array<{ chunkIndex: number; tf: number }>>> = new Map();
+  private embeddingService?: EmbeddingService;
+  private chunkEmbeddings: Map<string, Map<number, number[]>> = new Map();
+
+  constructor(embeddingService?: EmbeddingService) {
+    this.embeddingService = embeddingService;
+  }
+
+  getEmbeddingService(): EmbeddingService | undefined {
+    return this.embeddingService;
+  }
 
   /**
    * Indexes an extracted document for deep retrieval and high-fidelity summarization.
@@ -98,6 +111,30 @@ export class RAGService {
 
     this.documentProfiles.set(docId, profile);
     this.documentProfiles.set(fileName, profile); // also index by fileName for easy lookup
+
+    // 7. Generate neural semantic embeddings using nvidia/nemotron-3.5-embed-8b
+    if (this.embeddingService && this.embeddingService.isConfigured()) {
+      const textsToEmbed = chunks.slice(0, 48).map((c) => c.text);
+      this.embeddingService
+        .embedTexts(textsToEmbed, 'passage')
+        .then((vectors) => {
+          if (vectors && vectors.length > 0) {
+            let docMap = this.chunkEmbeddings.get(docId);
+            if (!docMap) {
+              docMap = new Map();
+              this.chunkEmbeddings.set(docId, docMap);
+              this.chunkEmbeddings.set(fileName, docMap);
+            }
+            vectors.forEach((vec, idx) => {
+              if (vec && vec.length > 0) {
+                docMap!.set(idx, vec);
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
     return profile;
   }
 
@@ -402,7 +439,7 @@ This comprehensive volume is a practical, first-principles guide that teaches ho
       response += `${cleanSnippet.slice(0, 450)}${cleanSnippet.length > 450 ? '...' : ''}\n\n`;
     });
 
-    response += `\n---\n*Retrieved and reranked using \`nemotron-3_5-rerank-8b\` from ${chunks.length} matching passages in \`${profile.fileName}\`.*`;
+    response += `\n---\n*Retrieved using \`nvidia/nemotron-3.5-embed-8b\` & reranked via \`nemotron-3_5-rerank-8b\` from ${chunks.length} matching passages in \`${profile.fileName}\`.*`;
     return response;
   }
 

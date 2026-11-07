@@ -10,7 +10,6 @@ import { useConversations } from './hooks/useConversations.js';
 import { useChat } from './hooks/useChat.js';
 import { UserSettings, ModelInfo } from '../types/index.js';
 import * as api from './services/api.js';
-import { initAuthSession } from './services/supabase.js';
 import { ChevronDown, Check } from 'lucide-react';
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -43,6 +42,7 @@ export const App: React.FC = () => {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const chatViewportRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef<boolean>(false);
+  const isUserInteractingRef = useRef<boolean>(false);
 
   // Theme hook
   const { theme, setTheme } = useTheme(settings.theme);
@@ -61,10 +61,8 @@ export const App: React.FC = () => {
     addOrUpdateConversation,
   } = useConversations(activeConversationId, setActiveConversationId);
 
-  // Load models, settings, and initialize Supabase Auth session
+  // Load models and settings
   useEffect(() => {
-    initAuthSession().catch((err) => console.warn('Supabase auth session notice:', err));
-
     api.fetchSettings()
       .then(s => setSettings(s))
       .catch(err => console.error('Failed to load settings:', err));
@@ -77,6 +75,7 @@ export const App: React.FC = () => {
   // Reset scroll state on switching conversations
   useEffect(() => {
     userScrolledUpRef.current = false;
+    isUserInteractingRef.current = false;
     setShowScrollBottom(false);
     if (chatViewportRef.current) {
       chatViewportRef.current.scrollTop = chatViewportRef.current.scrollHeight;
@@ -106,11 +105,83 @@ export const App: React.FC = () => {
     }
   );
 
-  // Handle auto-scroll during streaming or message addition:
-  // ONLY auto-scrolls down if the user has NOT deliberately scrolled up to read earlier text!
+  // Passive gesture listener for frictionless scrolling during active generation:
+  // Immediately pauses auto-scroll the instant user scrolls or touches up, with zero fighting!
   useEffect(() => {
-    if (chatViewportRef.current && !userScrolledUpRef.current) {
-      chatViewportRef.current.scrollTop = chatViewportRef.current.scrollHeight;
+    const el = chatViewportRef.current;
+    if (!el) return;
+
+    let interactionTimer: ReturnType<typeof setTimeout> | null = null;
+    const registerInteraction = () => {
+      isUserInteractingRef.current = true;
+      if (interactionTimer) clearTimeout(interactionTimer);
+      interactionTimer = setTimeout(() => {
+        isUserInteractingRef.current = false;
+      }, 200);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      registerInteraction();
+      if (e.deltaY < 0) {
+        // User wheeled upward — instantly pause auto-scroll without fighting
+        userScrolledUpRef.current = true;
+        setShowScrollBottom(true);
+      } else if (e.deltaY > 0) {
+        // Wheeled downward — check if close to bottom
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (dist <= 25) {
+          userScrolledUpRef.current = false;
+          setShowScrollBottom(false);
+        }
+      }
+    };
+
+    let touchStartY = 0;
+    const handleTouchStart = (e: TouchEvent) => {
+      registerInteraction();
+      touchStartY = e.touches[0]?.clientY || 0;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      registerInteraction();
+      const currentY = e.touches[0]?.clientY || 0;
+      const deltaY = currentY - touchStartY;
+      if (deltaY > 6) {
+        // Swiping downwards on screen scrolls content UP
+        userScrolledUpRef.current = true;
+        setShowScrollBottom(true);
+      } else if (deltaY < -6) {
+        // Swiping upwards scrolls content DOWN
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (dist <= 25) {
+          userScrolledUpRef.current = false;
+          setShowScrollBottom(false);
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+    return () => {
+      if (interactionTimer) clearTimeout(interactionTimer);
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [messages.length > 0]);
+
+  // Non-blocking auto-scroll during streaming or message addition:
+  // Only scrolls if the user is pinned at bottom and not manually scrolling/reading earlier text
+  useEffect(() => {
+    if (chatViewportRef.current && !userScrolledUpRef.current && !isUserInteractingRef.current) {
+      const el = chatViewportRef.current;
+      requestAnimationFrame(() => {
+        if (!userScrolledUpRef.current && !isUserInteractingRef.current && el) {
+          el.scrollTop = el.scrollHeight;
+        }
+      });
     }
   }, [messages, isStreaming]);
 
@@ -119,12 +190,12 @@ export const App: React.FC = () => {
     if (chatViewportRef.current) {
       const { scrollHeight, scrollTop, clientHeight } = chatViewportRef.current;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      // If user is more than 80px from the bottom, they scrolled up to read previous content
-      if (distanceFromBottom > 80) {
+      // If user is more than 35px from bottom, they have scrolled up to read previous content
+      if (distanceFromBottom > 35) {
         userScrolledUpRef.current = true;
         setShowScrollBottom(true);
-      } else {
-        // User has returned near the bottom
+      } else if (distanceFromBottom <= 15) {
+        // User has returned right near the bottom
         userScrolledUpRef.current = false;
         setShowScrollBottom(false);
       }
@@ -133,6 +204,7 @@ export const App: React.FC = () => {
 
   const scrollToBottom = () => {
     userScrolledUpRef.current = false;
+    isUserInteractingRef.current = false;
     setShowScrollBottom(false);
     if (chatViewportRef.current) {
       chatViewportRef.current.scrollTo({
@@ -245,6 +317,7 @@ export const App: React.FC = () => {
                   initialDraft={composerDraft}
                   onSendMessage={(content, enableSearch) => {
                     userScrolledUpRef.current = false;
+                    isUserInteractingRef.current = false;
                     setShowScrollBottom(false);
                     sendMessage(content, undefined, enableSearch);
                     setComposerDraft('');
@@ -271,7 +344,7 @@ export const App: React.FC = () => {
                   <MessageItem
                     key={msg.id}
                     message={msg}
-                    isStreaming={isStreaming}
+                    isStreaming={isStreaming && msg.status === 'streaming'}
                     onRegenerate={regenerateResponse}
                     onEditAndResubmit={editAndResubmit}
                   />
@@ -300,6 +373,7 @@ export const App: React.FC = () => {
                 initialDraft={composerDraft}
                 onSendMessage={(content, enableSearch) => {
                   userScrolledUpRef.current = false;
+                  isUserInteractingRef.current = false;
                   setShowScrollBottom(false);
                   sendMessage(content, undefined, enableSearch);
                   setComposerDraft('');

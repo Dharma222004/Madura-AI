@@ -30,13 +30,18 @@ export function createChatRouter(chatService: ChatService, supabaseService?: Sup
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering (nginx/Vercel)
+    res.setHeader('Transfer-Encoding', 'chunked'); // Force chunked transfer for Vercel SSE
 
     // Flush headers immediately
     res.flushHeaders();
 
     const sendEvent = (event: string, data: any) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      // Explicitly flush after each write so Vercel / proxies don't buffer SSE chunks
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
+      }
     };
 
     let clientDisconnected = false;

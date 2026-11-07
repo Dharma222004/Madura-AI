@@ -1,7 +1,19 @@
-import { AIProvider, ChatCompletionOptions, StreamChatResult } from './provider.interface.js';
+import { AIProvider, ChatCompletionOptions, StreamChatResult, MessageContent } from './provider.interface.js';
 import { ModelInfo } from '../../types/index.js';
 import { CLEAN_MODELS } from './nvidia.provider.js';
 import { RAGService } from '../services/rag.service.js';
+
+function extractText(content: MessageContent | undefined): string {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) => ('text' in p ? p.text : ''))
+      .filter(Boolean)
+      .join(' ');
+  }
+  return String(content);
+}
 
 export class MockProvider implements AIProvider {
   name = 'Madura AI Core Engine';
@@ -24,7 +36,7 @@ export class MockProvider implements AIProvider {
 
     if (isReasoning && onThoughtChunk) {
       thoughtStartTime = Date.now();
-      const lastMsg = options.messages[options.messages.length - 1]?.content || 'user inquiry';
+      const lastMsg = extractText(options.messages[options.messages.length - 1]?.content) || 'user inquiry';
       const promptSummary = lastMsg.slice(0, 60).replace(/\n/g, ' ');
       const thoughtThoughts = [
         `Analyzing query: "${promptSummary}"...\n`,
@@ -92,7 +104,7 @@ export class MockProvider implements AIProvider {
    */
   private generateAssistantResponse(options: ChatCompletionOptions): string {
     const messages = options.messages || [];
-    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    const lastUserMessage = extractText([...messages].reverse().find(m => m.role === 'user')?.content);
     const cleanPrompt = lastUserMessage.replace(/\[File:[^\]]+\][\s\S]*?\[End of [^\]]+\]/g, '').trim();
     const lower = cleanPrompt.toLowerCase().trim();
 
@@ -107,7 +119,7 @@ export class MockProvider implements AIProvider {
     }
 
     // 3. Conversational Follow-up (Multi-turn Context)
-    const prevAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant')?.content || '';
+    const prevAssistantMsg = extractText([...messages].reverse().find(m => m.role === 'assistant')?.content);
     if (prevAssistantMsg && (lower === 'explain more' || lower.includes('in more detail') || lower.includes('tell me more') || lower === 'elaborate')) {
       return this.elaborateOnPreviousTurn(prevAssistantMsg);
     }

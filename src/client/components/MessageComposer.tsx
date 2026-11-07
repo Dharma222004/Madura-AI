@@ -330,24 +330,37 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         {/* Attachment Pills */}
         {attachments.length > 0 && (
           <div className="composer-attachments">
-            {attachments.map((att) => (
-              <div key={att.id} className="composer-attachment-pill">
-                <FileText size={13} style={{ color: 'var(--accent-light)' }} />
-                <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {att.fileName}
-                </span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                  ({(att.fileSize / 1024).toFixed(0)} KB)
-                </span>
-                <button
-                  className="composer-attachment-remove"
-                  onClick={() => onRemoveAttachment(att.id)}
-                  title="Remove attachment"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
+            {attachments.map((att) => {
+              const isImage =
+                Boolean(att.previewUrl && att.previewUrl.startsWith('data:image/')) ||
+                Boolean(att.mimeType && att.mimeType.startsWith('image/'));
+              return (
+                <div key={att.id} className="composer-attachment-pill">
+                  {isImage && att.previewUrl ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.fileName}
+                      style={{ width: 16, height: 16, borderRadius: 3, objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <FileText size={13} style={{ color: 'var(--accent-light)' }} />
+                  )}
+                  <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {att.fileName}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    ({(att.fileSize / 1024).toFixed(0)} KB)
+                  </span>
+                  <button
+                    className="composer-attachment-remove"
+                    onClick={() => onRemoveAttachment(att.id)}
+                    title="Remove attachment"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 

@@ -1,11 +1,19 @@
 import { Message, ModelInfo } from '../../types/index.js';
 
+export type MessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export type MessageContent = string | MessageContentPart[];
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: MessageContent;
+}
+
 export interface ChatCompletionOptions {
   model: string;
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-  }>;
+  messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;

@@ -37,9 +37,131 @@ export const CLEAN_MODELS: ModelInfo[] = [
   },
   {
     id: 'nvidia-ultron',
-    name: 'Ultron',
+    name: 'Nemotron-3 Ultra',
     description: 'Deep reasoning model',
     contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'nemotron-lightning',
+    name: 'Nemotron 3.5 Lightning',
+    description: 'High-speed 30B reasoning model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'nemotron-omni',
+    name: 'Nemotron Omni (Vision)',
+    description: 'Image recognition & omni reasoning model',
+    contextWindow: 128000,
+    supportsVision: true,
+    isDefault: false,
+  },
+  {
+    id: 'minimax-m3.1-flash',
+    name: 'Minimax- M3 Flash',
+    description: 'High-speed Minimax reasoning model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'deepseek-v4.1-flash',
+    name: 'Deepseek-v4 Flash',
+    description: 'DeepSeek V4.1 Flash model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    description: 'GLM 5.3 Flash model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'muse-glimmer-30b',
+    name: 'Muse-Glimmer-30B',
+    description: 'Meta Muse Glimmer 30B model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  // ── OpenRouter Models ──────────────────────────────────────────────────────
+  {
+    id: 'nemotron-3.5-super',
+    name: 'Nemotron 3.5 Super',
+    description: 'Nemotron vision-language model',
+    contextWindow: 128000,
+    supportsVision: true,
+    isDefault: false,
+  },
+  {
+    id: 'gemma-4',
+    name: 'Gemma-4',
+    description: 'Google Gemma 4 26B',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'recursive',
+    name: 'Recursive',
+    description: 'Recursive Flint model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'xingchen',
+    name: 'Xingchen',
+    description: 'Xingchen AGI 29B model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'gemma-4-31b',
+    name: 'Gemma -4 31B',
+    description: 'Google Gemma 4 31B',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  // ── Oxlo Models ───────────────────────────────────────────────────────────
+  {
+    id: 'deepseek-v3.2',
+    name: 'Deepseek V 3.2',
+    description: 'DeepSeek V3.2 model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'mistral-7b',
+    name: 'Mistral 7B',
+    description: 'Mistral 7B model',
+    contextWindow: 32000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'llama-3.2-3b',
+    name: 'Llama3.2',
+    description: 'Llama 3.2 3B model',
+    contextWindow: 128000,
+    supportsVision: false,
+    isDefault: false,
+  },
+  {
+    id: 'stable-diffusion-1.5',
+    name: 'Stable Image Creation',
+    description: 'AI image generation',
+    contextWindow: 1024,
     supportsVision: false,
     isDefault: false,
   },
@@ -95,7 +217,11 @@ export class NvidiaProvider implements AIProvider {
   }
 
   resolveModel(_modelId?: string): string {
+    // Always resolve to the configured NVIDIA model (Mistral Large 4).
+    // The 'auto' ID and any unrecognised aliases are intentionally mapped here
+    // so the correct real model name is sent to the NVIDIA NIM API.
     const model = process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL;
+    // Prefix bare nemotron model names with the nvidia/ namespace
     if (!model.includes('/') && model.includes('nemotron')) {
       return `nvidia/${model}`;
     }

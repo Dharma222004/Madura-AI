@@ -19,6 +19,7 @@ import {
 import { Message } from '../../types/index.js';
 import { ThinkingAccordion } from './ThinkingAccordion.js';
 const MermaidDiagram = lazy(() => import('./MermaidDiagram.js'));
+const InteractiveDiagram = lazy(() => import('./InteractiveDiagram.js'));
 
 /** Fallback shimmer shown while the Mermaid renderer lazily loads */
 const DiagramLoading: React.FC = () => (
@@ -41,6 +42,7 @@ interface MessageItemProps {
  */
 function renderContentWithBreaks(content: React.ReactNode): React.ReactNode {
   if (typeof content === 'string') {
+    if (!content.includes('<br')) return content;
     if (!/<\s*br\s*\/?>/i.test(content)) return content;
     const parts = content.split(/<\s*br\s*\/?>/gi);
     return parts.map((part, index) => (
@@ -64,16 +66,17 @@ function renderContentWithBreaks(content: React.ReactNode): React.ReactNode {
   return content;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({
-  message,
-  isStreaming,
-  onRegenerate,
-  onEditAndResubmit,
-}) => {
-  const [copied, setCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content);
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+export const MessageItem = React.memo<MessageItemProps>(
+  function MessageItem({
+    message,
+    isStreaming,
+    onRegenerate,
+    onEditAndResubmit,
+  }) {
+    const [copied, setCopied] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editContent, setEditContent] = useState(message.content);
+    const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   const isUser = message.role === 'user';
 
@@ -100,15 +103,39 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         {/* Attachments preview */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="message-attachments-list">
-            {message.attachments.map((att) => (
-              <div key={att.id} className="attachment-badge">
-                <FileText size={14} className="attachment-badge-icon" />
-                <span>{att.fileName}</span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                  ({(att.fileSize / 1024).toFixed(0)} KB)
-                </span>
-              </div>
-            ))}
+            {message.attachments.map((att) => {
+              const isImage =
+                Boolean(att.previewUrl && att.previewUrl.startsWith('data:image/')) ||
+                Boolean(att.mimeType && att.mimeType.startsWith('image/'));
+              return (
+                <div key={att.id} className="attachment-badge">
+                  {isImage && att.previewUrl ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <img
+                        src={att.previewUrl}
+                        alt={att.fileName}
+                        style={{
+                          maxWidth: 240,
+                          maxHeight: 180,
+                          borderRadius: 6,
+                          objectFit: 'cover',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{att.fileName}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <FileText size={14} className="attachment-badge-icon" />
+                      <span>{att.fileName}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                        ({(att.fileSize / 1024).toFixed(0)} KB)
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -258,8 +285,45 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                       // Determine inline by checking if content has newlines or a language is specified
                       const isInline = !lang && !codeText.includes('\n');
 
+                      // Render Interactive Diagrams
+                      if (!isInline && lang === 'diagram') {
+                        if (isStreaming) {
+                          return (
+                            <div className="mermaid-loading-shimmer" title="Rendering diagram...">
+                              <DiagramLoading />
+                            </div>
+                          );
+                        }
+                        try {
+                          const data = JSON.parse(codeText);
+                          if (!data.nodes || !Array.isArray(data.nodes) || data.nodes.length === 0) {
+                            throw new Error('Invalid diagram: nodes required');
+                          }
+                          return (
+                            <Suspense fallback={<DiagramLoading />}>
+                              <InteractiveDiagram data={data} title={data.title} />
+                            </Suspense>
+                          );
+                        } catch {
+                          return (
+                            <CodeBlock
+                              language="json"
+                              value={codeText}
+                            />
+                          );
+                        }
+                      }
+
                       // Render Mermaid diagrams interactively
                       if (!isInline && lang === 'mermaid') {
+                        // While streaming, do not evaluate incomplete diagrams to prevent layout stutter
+                        if (isStreaming) {
+                          return (
+                            <div className="mermaid-loading-shimmer" title="Rendering diagram...">
+                              <DiagramLoading />
+                            </div>
+                          );
+                        }
                         return (
                           <Suspense fallback={<DiagramLoading />}>
                             <MermaidDiagram code={codeText} />
@@ -372,14 +436,30 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       </div>
     </div>
   );
-};
+},
+(prevProps, nextProps) => {
+  return (
+    prevProps.isStreaming === nextProps.isStreaming &&
+    prevProps.message.id === nextProps.message.id &&
+    prevProps.message.content === nextProps.message.content &&
+    prevProps.message.thought === nextProps.message.thought &&
+    prevProps.message.status === nextProps.message.status &&
+    prevProps.message.searchQuery === nextProps.message.searchQuery &&
+    prevProps.message.searchSources === nextProps.message.searchSources &&
+    prevProps.message.errorMessage === nextProps.message.errorMessage &&
+    prevProps.message.attachments === nextProps.message.attachments &&
+    prevProps.onRegenerate === nextProps.onRegenerate &&
+    prevProps.onEditAndResubmit === nextProps.onEditAndResubmit
+  );
+}
+);
 
 interface CodeBlockProps {
   language: string;
   value: string;
 }
 
-const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
+const CodeBlock: React.FC<CodeBlockProps> = React.memo(function CodeBlock({ language, value }) {
   const [copied, setCopied] = useState(false);
 
   const copyCode = async () => {
@@ -418,4 +498,4 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
       </pre>
     </div>
   );
-};
+});

@@ -11,12 +11,13 @@ interface ThinkingAccordionProps {
   hasContent: boolean;
 }
 
-export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
-  thought,
-  thoughtDurationMs,
-  isStreaming,
-  hasContent,
-}) => {
+export const ThinkingAccordion = React.memo<ThinkingAccordionProps>(
+  function ThinkingAccordion({
+    thought,
+    thoughtDurationMs,
+    isStreaming,
+    hasContent,
+  }) {
   // Always hidden by default: only shown if the user explicitly touches/clicks it.
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -92,10 +93,13 @@ export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
 
   return (
     <div className={`thinking-accordion-container ${isActivelyThinking ? 'active-thinking' : 'completed-thinking'}`}>
-      <button
-        type="button"
+      {/* Use a div+role instead of <button> so we can nest the copy <button> inside without a DOM violation */}
+      <div
+        role="button"
+        tabIndex={0}
         className="thinking-accordion-header"
         onClick={handleToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(); } }}
         aria-expanded={isExpanded}
         title={isExpanded ? 'Collapse reasoning steps' : 'Tap to view reasoning steps'}
       >
@@ -150,7 +154,7 @@ export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </div>
-      </button>
+      </div>
 
       {isExpanded && (
         <div className="thinking-accordion-body" ref={thoughtBodyRef}>
@@ -167,4 +171,4 @@ export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
       )}
     </div>
   );
-};
+});

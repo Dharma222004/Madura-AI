@@ -20,47 +20,76 @@ export interface ModelFallbackConfig {
   chain?: Array<{ realModel: string; baseUrl: string; apiKey: string }>;
 }
 
-export type ProviderName = 'nvidia' | 'gemini' | 'groq';
+export type ProviderName = 'nvidia' | 'gemini' | 'groq' | 'openrouter' | 'oxlo' | 'cloudflare';
+
+// ── Per-provider max_tokens caps ─────────────────────────────────────────────
+// Some free-plan providers enforce lower token limits than the default 8192.
+const PROVIDER_MAX_TOKENS_CAP: Partial<Record<ProviderName, number>> = {
+  oxlo: 4096,
+};
+
+// ── Timeout helpers ───────────────────────────────────────────────────────────
+/**
+ * Creates an AbortSignal that fires after `ms` milliseconds.
+ * Returns the signal and a cancel function to clear the timer early.
+ */
+function makeTimeoutSignal(ms: number): { signal: AbortSignal; cancel: () => void } {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(new Error(`Request timed out after ${ms}ms`)), ms);
+  return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
+}
 
 export class ProviderKeyPool {
   private pools: Map<ProviderName, {
     keys: string[];
     currentIndex: number;
     cooldowns: Map<string, number>;
+    lastWorkingIndex: number;
   }> = new Map();
 
-  constructor(initial: Record<ProviderName, string[]>) {
+  constructor(initial: Partial<Record<ProviderName, string[]>>) {
     for (const [provider, keys] of Object.entries(initial) as [ProviderName, string[]][]) {
       this.pools.set(provider, {
-        keys: [...keys],
+        keys: [...(keys || [])],
         currentIndex: 0,
         cooldowns: new Map(),
+        lastWorkingIndex: 0,
       });
     }
   }
 
   /**
-   * Returns an ordered list of keys for the provider starting with the active key.
-   * Keys that are not in rate-limit cooldown are prioritized first.
+   * Returns an ordered list of keys for the provider.
+   * - Starts from lastWorkingIndex (the key that last succeeded).
+   * - Healthy (non-cooldown) keys come before cooldown keys.
+   * - Keys already tried this request are excluded entirely.
    */
-  getOrderedKeys(provider?: ProviderName, overrideKeys?: string[]): string[] {
+  getOrderedKeys(
+    provider?: ProviderName,
+    overrideKeys?: string[],
+    triedKeys?: Set<string>
+  ): string[] {
     const pool = provider ? this.pools.get(provider) : undefined;
     const allKeys = pool && pool.keys.length > 0 ? pool.keys : (overrideKeys || []);
     if (allKeys.length === 0) return [];
 
     const total = allKeys.length;
-    const currentIdx = pool ? pool.currentIndex : 0;
+    const startIdx = pool ? pool.lastWorkingIndex : 0;
     const now = Date.now();
 
+    // Build rotation starting from lastWorkingIndex
     const rotated: string[] = [];
     for (let i = 0; i < total; i++) {
-      const idx = (currentIdx + i) % total;
-      rotated.push(allKeys[idx]);
+      const idx = (startIdx + i) % total;
+      const k = allKeys[idx];
+      // Skip keys already tried this request
+      if (triedKeys && triedKeys.has(k)) continue;
+      rotated.push(k);
     }
 
+    // Separate healthy vs cooldown (but both are still tried if no healthy remain)
     const healthy: string[] = [];
     const inCooldown: string[] = [];
-
     for (const key of rotated) {
       const cooldownEnd = pool?.cooldowns.get(key) || 0;
       if (cooldownEnd <= now) {
@@ -75,6 +104,7 @@ export class ProviderKeyPool {
 
   /**
    * Resets cooldown and records that this key successfully served a request.
+   * Updates lastWorkingIndex so the next request starts here.
    */
   recordSuccess(provider: ProviderName | undefined, key: string): void {
     if (!provider) return;
@@ -82,14 +112,19 @@ export class ProviderKeyPool {
     if (!pool) return;
     pool.cooldowns.delete(key);
     const idx = pool.keys.indexOf(key);
-    if (idx !== -1 && pool.currentIndex !== idx) {
-      console.log(`[ProviderKeyPool] Switched active ${provider.toUpperCase()} key to #${idx + 1}/${pool.keys.length}`);
+    if (idx !== -1) {
+      if (pool.lastWorkingIndex !== idx) {
+        console.log(`[ProviderKeyPool] ${provider.toUpperCase()} key #${idx + 1}/${pool.keys.length} succeeded — pinning as preferred.`);
+        pool.lastWorkingIndex = idx;
+      }
       pool.currentIndex = idx;
     }
   }
 
   /**
-   * Applies cooldown and auto-switches to the next key in the pool.
+   * Applies cooldown for a failed key but does NOT change lastWorkingIndex
+   * (we only pin on success). The next call to getOrderedKeys will skip the
+   * cooldown key automatically.
    */
   recordFailure(provider: ProviderName | undefined, key: string, status: number, reason: string): void {
     if (!provider) return;
@@ -107,15 +142,15 @@ export class ProviderKeyPool {
 
     const idx = pool.keys.indexOf(key);
     const total = pool.keys.length;
-    if (total > 1 && idx !== -1) {
-      const nextIdx = (idx + 1) % total;
-      pool.currentIndex = nextIdx;
+    // Find next available (non-cooldown) key for display purposes
+    const nextIdx = total > 1 && idx !== -1 ? (idx + 1) % total : -1;
+    if (nextIdx !== -1) {
       console.warn(
-        `[ProviderKeyPool] ${provider.toUpperCase()} key #${idx + 1} limit reached / failed (${status}: ${reason.slice(0, 80)}). Auto-switching to key #${nextIdx + 1}/${total}...`
+        `[ProviderKeyPool] ${provider.toUpperCase()} key #${idx + 1}/${total} failed (${status}: ${reason.slice(0, 80)}). Will try key #${nextIdx + 1} next...`
       );
     } else {
       console.warn(
-        `[ProviderKeyPool] ${provider.toUpperCase()} key failed (${status}: ${reason.slice(0, 80)}). No alternative keys available in pool.`
+        `[ProviderKeyPool] ${provider.toUpperCase()} key #${idx + 1}/${total} failed (${status}: ${reason.slice(0, 80)}). No more keys in pool.`
       );
     }
   }
@@ -177,6 +212,8 @@ function resolveProviderKeys(
 
 export function buildModelRegistry(): ModelConfig[] {
   const nvidiaBase = (process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, '');
+  const openrouterBase = 'https://openrouter.ai/api/v1';
+  const oxloBase = (process.env.OXLO_BASE_URL || 'https://api.oxlo.ai/v1').replace(/\/+$/, '');
 
   const nvidiaKeys = resolveProviderKeys(
     process.env.NVIDIA_API_KEY || '',
@@ -198,6 +235,31 @@ export function buildModelRegistry(): ModelConfig[] {
     'GROQ_API_KEY',
     false
   );
+
+  const openrouterKeys = resolveProviderKeys(
+    process.env.OPENROUTER_API_KEY || '',
+    process.env.OPENROUTER_API_KEYS,
+    'OPENROUTER_API_KEY',
+    false
+  );
+
+  const oxloKeys = resolveProviderKeys(
+    process.env.OXLO_API_KEY || '',
+    process.env.OXLO_API_KEYS,
+    'OXLO_API_KEY',
+    false
+  );
+
+  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || 'b97097b151c5a207564bdeea82df6632';
+  const cloudflareBase = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1`;
+
+  const cloudflareKeys = resolveProviderKeys(
+    process.env.CLOUDFLARE_API_KEY || '',
+    process.env.CLOUDFLARE_API_KEYS,
+    'CLOUDFLARE_API_KEY',
+    false
+  );
+
   return [
     // 1. Auto (Default Model) — NVIDIA NIM Mistral Large 4
     {
@@ -256,10 +318,10 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'nvidia-ultron',
     },
-    // 5. Ultron — NVIDIA NIM Nemotron Ultra 550B
+    // 5. Nemotron-3 Ultra — NVIDIA NIM Nemotron Ultra 550B
     {
       id: 'nvidia-ultron',
-      displayName: 'Ultron',
+      displayName: 'Nemotron-3 Ultra',
       realModel: 'nvidia/nemotron-3-ultra-550b-a55b',
       baseUrl: nvidiaBase,
       apiKey: nvidiaKeys[0] || '',
@@ -270,6 +332,354 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       isReasoning: true,
       crossProviderFallbackId: 'gpt-oss-120b',
+    },
+    // 6. Nemotron 3.5 Lightning — NVIDIA NIM
+    {
+      id: 'nemotron-lightning',
+      displayName: 'Nemotron 3.5 Lightning',
+      realModel: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'High-speed 30B reasoning model',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 6. Nemotron Omni — NVIDIA NIM Image Recognition & Multimodal Reasoning
+    {
+      id: 'nemotron-omni',
+      displayName: 'Nemotron Omni (Vision)',
+      realModel: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'Image recognition & omni reasoning model',
+      contextWindow: 128000,
+      supportsVision: true,
+      isReasoning: true,
+      crossProviderFallbackId: 'gemini-flash',
+    },
+    // 7. Minimax- M3 Flash — NVIDIA NIM (outputs <think> reasoning tags)
+    {
+      id: 'minimax-m3.1-flash',
+      displayName: 'Minimax- M3 Flash',
+      realModel: 'minimaxai/minimax-m3.1-flash',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'High-speed Minimax reasoning model',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 8. Deepseek-v4 Flash — NVIDIA NIM (outputs <think> reasoning tags)
+    {
+      id: 'deepseek-v4.1-flash',
+      displayName: 'Deepseek-v4 Flash',
+      realModel: 'deepseek-ai/deepseek-v4.1-flash',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'DeepSeek V4.1 Flash model',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 9. GLM 5.3 Flash — NVIDIA NIM (outputs <think> reasoning tags — must be treated as reasoning)
+    {
+      id: 'glm-5.3-flash',
+      displayName: 'GLM 5.3 Flash',
+      realModel: 'z-ai/glm-5.3-flash',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'GLM 5.3 Flash model',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 10. Muse-Glimmer-30B — NVIDIA NIM
+    {
+      id: 'muse-glimmer-30b',
+      displayName: 'Muse-Glimmer-30B',
+      realModel: 'meta/muse-glimmer-30b',
+      baseUrl: nvidiaBase,
+      apiKey: nvidiaKeys[0] || '',
+      apiKeys: nvidiaKeys,
+      providerName: 'nvidia',
+      description: 'Meta Muse Glimmer 30B model',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // ── OpenRouter Models ──────────────────────────────────────────────────────
+    // 6. Nemotron 3.5 Super — OpenRouter (free)
+    {
+      id: 'nemotron-3.5-super',
+      displayName: 'Nemotron 3.5 Super',
+      realModel: 'nvidia/nemotron-3.5-super-vl:free',
+      baseUrl: openrouterBase,
+      apiKey: openrouterKeys[0] || '',
+      apiKeys: openrouterKeys,
+      providerName: 'openrouter',
+      description: 'Nemotron vision-language model',
+      contextWindow: 128000,
+      supportsVision: true,
+      crossProviderFallbackId: 'gemini-flash',
+    },
+    // 7. Gemma-4 26B — OpenRouter (free)
+    {
+      id: 'gemma-4',
+      displayName: 'Gemma-4',
+      realModel: 'google/gemma-4-26b-a4b-it:free',
+      baseUrl: openrouterBase,
+      apiKey: openrouterKeys[0] || '',
+      apiKeys: openrouterKeys,
+      providerName: 'openrouter',
+      description: 'Google Gemma 4 26B',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'gemini-flash',
+    },
+    // 8. Recursive Flint — OpenRouter (free)
+    {
+      id: 'recursive',
+      displayName: 'Recursive',
+      realModel: 'recursive/flint-v1.0:free',
+      baseUrl: openrouterBase,
+      apiKey: openrouterKeys[0] || '',
+      apiKeys: openrouterKeys,
+      providerName: 'openrouter',
+      description: 'Recursive Flint model',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 9. Xingchen — OpenRouter (free)
+    {
+      id: 'xingchen',
+      displayName: 'Xingchen',
+      realModel: 'xingchen-agi/xing4.0-29b-a4b:free',
+      baseUrl: openrouterBase,
+      apiKey: openrouterKeys[0] || '',
+      apiKeys: openrouterKeys,
+      providerName: 'openrouter',
+      description: 'Xingchen AGI 29B model',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 10. Gemma-4 31B — OpenRouter (free)
+    {
+      id: 'gemma-4-31b',
+      displayName: 'Gemma -4 31B',
+      realModel: 'google/gemma-4-31b-it:free',
+      baseUrl: openrouterBase,
+      apiKey: openrouterKeys[0] || '',
+      apiKeys: openrouterKeys,
+      providerName: 'openrouter',
+      description: 'Google Gemma 4 31B',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'gemini-flash',
+    },
+    // ── Oxlo Models ───────────────────────────────────────────────────────────
+    // 11. Deepseek V3.2 — Oxlo
+    {
+      id: 'deepseek-v3.2',
+      displayName: 'Deepseek V 3.2',
+      realModel: 'deepseek-v3.2',
+      baseUrl: oxloBase,
+      apiKey: oxloKeys[0] || '',
+      apiKeys: oxloKeys,
+      providerName: 'oxlo',
+      description: 'DeepSeek V3.2 model',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 12. Mistral 7B — Oxlo
+    {
+      id: 'mistral-7b',
+      displayName: 'Mistral 7B',
+      realModel: 'mistral-7b',
+      baseUrl: oxloBase,
+      apiKey: oxloKeys[0] || '',
+      apiKeys: oxloKeys,
+      providerName: 'oxlo',
+      description: 'Mistral 7B model',
+      contextWindow: 32000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 13. Llama 3.2 3B — Oxlo
+    {
+      id: 'llama-3.2-3b',
+      displayName: 'Llama3.2',
+      realModel: 'llama-3.2-3b',
+      baseUrl: oxloBase,
+      apiKey: oxloKeys[0] || '',
+      apiKeys: oxloKeys,
+      providerName: 'oxlo',
+      description: 'Llama 3.2 3B model',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 14. Stable Diffusion 1.5 — Oxlo (image generation)
+    {
+      id: 'stable-diffusion-1.5',
+      displayName: 'Stable Image Creation',
+      realModel: 'stable-diffusion-1.5',
+      baseUrl: oxloBase,
+      apiKey: oxloKeys[0] || '',
+      apiKeys: oxloKeys,
+      providerName: 'oxlo',
+      description: 'AI image generation',
+      contextWindow: 1024,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // ── Cloudflare Workers AI Models ──────────────────────────────────────────
+    // 15. Qwen 3.8 27B — Cloudflare Workers AI
+    {
+      id: 'cf-qwen3.8-27b',
+      displayName: 'Qwen 3.8 27B (CF)',
+      realModel: '@cf/qwen/qwen3.8-27b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'Qwen 3.8 27B on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'qwen-3.8',
+    },
+    // 16. Gemma-4 26B — Cloudflare Workers AI
+    {
+      id: 'cf-gemma-4-26b',
+      displayName: 'Gemma-4 26B (CF)',
+      realModel: '@cf/google/gemma-4-26b-a4b-it',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'Google Gemma-4 26B on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'gemma-4',
+    },
+    // 17. Nemotron-3 120B — Cloudflare Workers AI
+    {
+      id: 'cf-nemotron-3-120b',
+      displayName: 'Nemotron-3 120B (CF)',
+      realModel: '@cf/nvidia/nemotron-3-120b-a12b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'NVIDIA Nemotron-3 120B on Cloudflare',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 18. GLM 4.7 Flash — Cloudflare Workers AI
+    {
+      id: 'cf-glm-4.7-flash',
+      displayName: 'GLM 4.7 Flash',
+      realModel: '@cf/zai-org/glm-4.7-flash',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'GLM 4.7 Flash on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'glm-5.3-flash',
+    },
+    // 19. GPT 120B — Cloudflare Workers AI
+    {
+      id: 'cf-gpt-120b',
+      displayName: 'GPT 120B',
+      realModel: '@cf/openai/gpt-oss-120b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'OpenAI GPT-OSS 120B on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'gpt-oss-120b',
+    },
+    // 20. GPT-OSS 20B — Cloudflare Workers AI
+    {
+      id: 'cf-gpt-oss-20b',
+      displayName: 'GPT-OSS 20B',
+      realModel: '@cf/openai/gpt-oss-20b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'OpenAI GPT-OSS 20B on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      isReasoning: true,
+      crossProviderFallbackId: 'auto',
+    },
+    // 21. Qwen3 30B FP8 — Cloudflare Workers AI
+    {
+      id: 'cf-qwen3-30b-fp8',
+      displayName: 'Qwen3 30B FP8',
+      realModel: '@cf/qwen/qwen3-30b-a3b-fp8',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'Qwen3 30B FP8 on Cloudflare Workers AI',
+      contextWindow: 128000,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 22. Flux-2 Klein 4B — Cloudflare Workers AI (Image Creation)
+    {
+      id: 'cf-flux-2-klein-4b',
+      displayName: 'Flux-2 Klein 4B',
+      realModel: '@cf/black-forest-labs/flux-2-klein-4b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'Black Forest Labs Flux-2 Klein 4B image creation',
+      contextWindow: 1024,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
+    },
+    // 23. Flux-2 Klein 9B — Cloudflare Workers AI (Image Creation)
+    {
+      id: 'cf-flux-2-klein-9b',
+      displayName: 'Flux-2 Klein 9B',
+      realModel: '@cf/black-forest-labs/flux-2-klein-9b',
+      baseUrl: cloudflareBase,
+      apiKey: cloudflareKeys[0] || '',
+      apiKeys: cloudflareKeys,
+      providerName: 'cloudflare',
+      description: 'Black Forest Labs Flux-2 Klein 9B image creation',
+      contextWindow: 1024,
+      supportsVision: false,
+      crossProviderFallbackId: 'auto',
     },
   ];
 }
@@ -304,11 +714,32 @@ export class MultiModelProvider implements AIProvider {
       'GROQ_API_KEY',
       false
     );
+    const openrouterKeys = resolveProviderKeys(
+      process.env.OPENROUTER_API_KEY || '',
+      process.env.OPENROUTER_API_KEYS,
+      'OPENROUTER_API_KEY',
+      false
+    );
+    const oxloKeys = resolveProviderKeys(
+      process.env.OXLO_API_KEY || '',
+      process.env.OXLO_API_KEYS,
+      'OXLO_API_KEY',
+      false
+    );
+    const cloudflareKeys = resolveProviderKeys(
+      process.env.CLOUDFLARE_API_KEY || '',
+      process.env.CLOUDFLARE_API_KEYS,
+      'CLOUDFLARE_API_KEY',
+      false
+    );
 
     this.keyPool = new ProviderKeyPool({
       nvidia: nvidiaKeys,
       gemini: geminiKeys,
       groq: groqKeys,
+      openrouter: openrouterKeys,
+      oxlo: oxloKeys,
+      cloudflare: cloudflareKeys,
     });
   }
 
@@ -321,7 +752,9 @@ export class MultiModelProvider implements AIProvider {
       modelId === 'nvidia/nemotron-3-super-120b-a12b' ||
       modelId === 'gpt-oss-20b' ||
       modelId === 'openai/gpt-oss-20b' ||
-      modelId === 'gpt-6.1-sol'
+      modelId === 'gpt-6.1-sol' ||
+      modelId === 'madura-4.0-turbo' ||
+      modelId === 'madura-turbo'
     ) {
       return this.registry.find((m) => m.id === 'auto') || this.defaultModel;
     }
@@ -378,6 +811,9 @@ export class MultiModelProvider implements AIProvider {
       onChunk(token);
     };
 
+    // Per-request tried-key tracking — prevents 4→1→4→1 infinite loops
+    const triedKeysThisRequest = new Set<string>();
+
     // Build target queue: active key first, then rotated keys from the pool
     const targets: Array<{
       realModel: string;
@@ -387,7 +823,7 @@ export class MultiModelProvider implements AIProvider {
       isFallback?: boolean;
     }> = [];
 
-    const keysToTry = this.keyPool.getOrderedKeys(cfg.providerName, cfg.apiKeys || [cfg.apiKey]);
+    const keysToTry = this.keyPool.getOrderedKeys(cfg.providerName, cfg.apiKeys || [cfg.apiKey], triedKeysThisRequest);
     keysToTry.forEach((k, idx) => {
       if (k && k.trim()) {
         targets.push({
@@ -425,8 +861,10 @@ export class MultiModelProvider implements AIProvider {
     }
 
     let lastError: any = null;
+    let skipRemainingKeys = false; // set when it's a model-level error (not key-level)
 
     for (const target of targets) {
+      if (skipRemainingKeys) break;
       // Normalize model names for provider endpoints
       let modelToSend = target.realModel;
       if (modelToSend === 'gemini-2.0-flash') {
@@ -454,7 +892,7 @@ export class MultiModelProvider implements AIProvider {
         // OpenAI Responses API separates instructions from conversation turns (input)
         const sysMsg = options.messages.find((m) => m.role === 'system');
         let instructions: string | undefined = undefined;
-        if (sysMsg && sysMsg.content) {
+        if (sysMsg && typeof sysMsg.content === 'string') {
           instructions = sysMsg.content
             .replace(/NEVER mention or claim to be powered by.*?(?=\n\s*\d|\n\n|$)/gis, '')
             .replace(/Do not claim to be ChatGPT, GPT-4, Claude.*?(?=\n\s*\d|\n\n|$)/gis, '')
@@ -466,7 +904,11 @@ export class MultiModelProvider implements AIProvider {
           .filter((m) => m.role !== 'system')
           .map((m) => ({
             role: m.role,
-            content: m.content,
+            content: typeof m.content === 'string'
+              ? m.content
+              : Array.isArray(m.content)
+              ? m.content.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('\n')
+              : String(m.content),
           }));
 
         if (conversationTurns.length === 0) {
@@ -482,10 +924,26 @@ export class MultiModelProvider implements AIProvider {
           max_output_tokens: Math.min(512, Math.max(16, options.maxTokens ?? 512)),
         };
       } else {
+        const messagesToSend = cfg.supportsVision
+          ? options.messages
+          : options.messages.map((m) => {
+              if (Array.isArray(m.content)) {
+                const textOnly = m.content
+                  .filter((p: any) => p.type === 'text')
+                  .map((p: any) => p.text)
+                  .join('\n');
+                return { ...m, content: textOnly || '[Image]' };
+              }
+              return m;
+            });
+
         payload = {
           model: modelToSend,
-          messages: options.messages,
-          max_tokens: options.maxTokens ?? 8192,
+          messages: messagesToSend,
+          max_tokens: Math.min(
+            options.maxTokens ?? 8192,
+            PROVIDER_MAX_TOKENS_CAP[cfg.providerName] ?? 8192
+          ),
           stream: true,
         };
         if (!isReasoning) {
@@ -500,18 +958,42 @@ export class MultiModelProvider implements AIProvider {
         ...(cfg.customHeaders || {}),
       };
 
+      if (target.provider === 'openrouter' || target.baseUrl.includes('openrouter.ai')) {
+        reqHeaders['HTTP-Referer'] = 'https://madura.ai';
+        reqHeaders['X-Title'] = 'Madura AI';
+      }
+
       let attempt = 0;
       const maxAttempts = 2;
 
+      // Mark this key as tried for the current request so we never loop back to it
+      triedKeysThisRequest.add(target.apiKey);
+
       while (attempt < maxAttempts) {
         attempt++;
+
+        // ── Connect / TTFB timeout (45s — NVIDIA NIM can be slow to cold-start) ──
+        const { signal: connectSignal, cancel: cancelConnect } = makeTimeoutSignal(45_000);
+        const fetchSignal = signal
+          ? (AbortSignal as any).any
+            ? (AbortSignal as any).any([signal, connectSignal])
+            : connectSignal
+          : connectSignal;
+
         try {
+          if (target.provider === 'cloudflare' && target.baseUrl.includes('/accounts/default/')) {
+            throw new Error(
+              `Cloudflare Account ID is required for ${cfg.displayName}. Please add CLOUDFLARE_ACCOUNT_ID to your .env file (copy it from Cloudflare Dashboard > Workers & Pages).`
+            );
+          }
+
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: reqHeaders,
             body: JSON.stringify(payload),
-            signal,
+            signal: fetchSignal,
           });
+          cancelConnect(); // response headers received — cancel connect timeout
 
           if (!response.ok) {
             const errorText = await response.text().catch(() => '');
@@ -733,7 +1215,23 @@ export class MultiModelProvider implements AIProvider {
 
           const finalize = (reason: string): StreamChatResult => {
             const finalText = isReasoning ? this.stripThinkTags(rawFullText).trim() : rawFullText.trim();
-            if (!finalText && reason !== 'interrupted') {
+
+            if (!finalText && reason !== 'interrupted' && !hasEmittedContent) {
+              // Some reasoning models stream their entire answer inside <think> via reasoning_content
+              // delta (accumulatedThought) rather than delta.content. If we got thought content but
+              // no main content, emit the thought as the answer to avoid a false "Empty response".
+              if (accumulatedThought.trim()) {
+                console.warn(`[MultiModelProvider] ${cfg.displayName} returned content only via reasoning channel — using thought as answer.`);
+                // Emit thought as the actual answer so the UI shows something
+                emitContent(accumulatedThought.trim());
+                if (!thoughtDurationMs && thoughtStartTime) thoughtDurationMs = Date.now() - thoughtStartTime;
+                return {
+                  fullText: accumulatedThought.trim(),
+                  thought: undefined, // already emitted as content
+                  thoughtDurationMs,
+                  finishReason: reason,
+                };
+              }
               throw new Error(`Empty response from AI service [${cfg.displayName}/${target.realModel}]`);
             }
             if (!thoughtDurationMs && thoughtStartTime) thoughtDurationMs = Date.now() - thoughtStartTime;
@@ -750,7 +1248,26 @@ export class MultiModelProvider implements AIProvider {
               reader.cancel().catch(() => { });
               return finalize('interrupted');
             }
-            const { done, value } = await reader.read();
+
+            // ── Idle-between-chunks timeout (35s normal / 60s reasoning) ──────
+            const idleTimeoutMs = isReasoning ? 60_000 : 35_000;
+            const { signal: idleSignal, cancel: cancelIdle } = makeTimeoutSignal(idleTimeoutMs);
+
+            let readResult: Awaited<ReturnType<typeof reader.read>>;
+            try {
+              readResult = await Promise.race([
+                reader.read(),
+                new Promise<never>((_, reject) => {
+                  idleSignal.addEventListener('abort', () =>
+                    reject(new Error(`Stream idle timeout after ${idleTimeoutMs / 1000}s — no data received`))
+                  );
+                }),
+              ]);
+            } finally {
+              cancelIdle();
+            }
+
+            const { done, value } = readResult;
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -766,18 +1283,35 @@ export class MultiModelProvider implements AIProvider {
           return finalize(finishReason);
 
         } catch (err: any) {
-          if (err.name === 'AbortError' || signal?.aborted) throw err;
+          // Only propagate true user-initiated aborts, NOT our internal timeout aborts
+          if ((err.name === 'AbortError' || signal?.aborted) && !err.message?.includes('timed out') && !err.message?.includes('idle timeout')) {
+            throw err;
+          }
           // Once visible text is delivered, a retry would append a second answer.
           if (hasEmittedContent) throw err;
           lastError = err;
           const targetIndex = targets.indexOf(target);
           const hasMoreTargets = targetIndex < targets.length - 1;
 
-          this.keyPool.recordFailure(target.provider, target.apiKey, 500, err.message || 'Stream connection error');
+          // Classify error: "Empty response" is a model/request issue — don't burn the key with a cooldown.
+          // Only mark the key as failed for real key-level errors (timeouts, network errors).
+          const isEmptyResponseError = err.message?.includes('Empty response from AI service');
+          if (!isEmptyResponseError) {
+            const failStatus = err.message?.includes('timed out') || err.message?.includes('idle timeout') ? 503 : 500;
+            this.keyPool.recordFailure(target.provider, target.apiKey, failStatus, err.message || 'Stream connection error');
+          }
+
+          if (isEmptyResponseError) {
+            // Model returned nothing — no point trying the same model on another key.
+            // Fall through to cross-provider fallback immediately.
+            console.warn(`[MultiModelProvider] ${cfg.displayName}: Empty response (model issue, not key issue). Skipping remaining keys → cross-provider fallback.`);
+            skipRemainingKeys = true;
+            break; // exit inner while → skipRemainingKeys exits outer for → cross-provider fallback
+          }
 
           if (hasMoreTargets) {
-            // Any error (including retryable rate-limit/upstream errors) → auto-switch to next fallback
-            console.warn(`[MultiModelProvider] Target #${targetIndex + 1} (${target.realModel}) failed: ${err.message?.slice(0, 120)}. Auto-switching to next key/fallback...`);
+            // Real error (timeout/rate-limit/network) → try next key
+            console.warn(`[MultiModelProvider] ${cfg.displayName} key #${targetIndex + 1}/${targets.length} failed: ${err.message?.slice(0, 120)}. Trying next key...`);
             break; // exit attempt loop → outer for-loop will pick next target
           }
 
