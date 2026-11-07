@@ -53,6 +53,52 @@ export class SearchService {
   }
 
   /**
+   * Cleans and distills long or multi-line user prompts into a focused, high-relevance search query.
+   * Prevents sending giant multi-paragraph prompt instructions to the search engine.
+   */
+  extractCleanSearchQuery(prompt: string): string {
+    if (!prompt) return '';
+    const clean = prompt.trim();
+
+    // If query is already short and single-line, clean common conversational prefixes
+    if (clean.length <= 90 && !clean.includes('\n')) {
+      return clean.replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|search\s+for|google|look\s+up)\s+/i, '').trim();
+    }
+
+    // Split into non-empty lines
+    const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
+    let target = lines[0] || '';
+
+    // Search for a line mentioning explicit search directives or live data topics
+    for (const line of lines) {
+      if (/\b(fetch|search|closing data|price|market|news|latest|today|indices|nifty|sensex|stock)\b/i.test(line)) {
+        target = line;
+        break;
+      }
+    }
+
+    // Strip instructional headers like "Web search STEP 1 — Data Collection (Run First...)"
+    target = target.replace(/^(web\s+search\s*(step\s*\d+)?\s*[\u2014\-–:]*)/i, '');
+    target = target.replace(/^(data\s+collection\s*[\u2014\-–:]*)/i, '');
+    target = target.replace(/\((run\s+first|daily|after|before)[\w\s,]*\)/gi, '');
+    target = target.replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|search\s+for|fetch|find|look\s+up|get)\s+/i, '');
+    target = target.trim();
+
+    // Take the first complete sentence of the targeted line if it has punctuation
+    const sentenceMatch = target.match(/^([^.?!]+)/);
+    if (sentenceMatch && sentenceMatch[1] && sentenceMatch[1].trim().length > 10) {
+      target = sentenceMatch[1].trim();
+    }
+
+    // Clamp to maximum ~120 characters so it fits neatly into search engines and UI status pills
+    if (target.length > 120) {
+      target = target.slice(0, 117).trim() + '...';
+    }
+
+    return target || clean.slice(0, 90).trim();
+  }
+
+  /**
    * Intelligently classifies whether a user prompt truly requires real-time/live web search.
    * Only returns true when the query seeks live, up-to-date, or time-sensitive data.
    */

@@ -244,10 +244,11 @@ export class ChatService {
       (!hasConversationDocuments && this.searchService.needsLiveSearch(params.messageContent));
 
     if (shouldSearch) {
+      const cleanSearchQuery = this.searchService.extractCleanSearchQuery(params.messageContent);
       if (params.onSearchStart) {
-        params.onSearchStart(params.messageContent);
+        params.onSearchStart(cleanSearchQuery);
       }
-      searchData = await this.searchService.search(params.messageContent);
+      searchData = await this.searchService.search(cleanSearchQuery);
       if (params.onSearchDone) {
         params.onSearchDone(searchData.results);
       }

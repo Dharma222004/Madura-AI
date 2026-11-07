@@ -76,16 +76,21 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   }, [initialDraft]);
 
-  // Auto-resize textarea height
+  // Dynamic multiline layout detection (switches between single-line pill and multiline card)
+  const [isMultiLine, setIsMultiLine] = useState(false);
+
+  // Auto-resize textarea height & toggle multiline mode
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
+      const scrollH = textareaRef.current.scrollHeight;
+      const multi = content.includes('\n') || scrollH > 44;
+      setIsMultiLine(multi);
       if (content) {
-        textareaRef.current.style.height = `${Math.min(
-          textareaRef.current.scrollHeight,
-          200
-        )}px`;
+        textareaRef.current.style.height = `${Math.min(scrollH, 200)}px`;
       }
+    } else {
+      setIsMultiLine(false);
     }
   }, [content]);
 
@@ -326,7 +331,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
   return (
     <div className="composer-outer">
-      <div className="composer-box">
+      <div className={`composer-box ${isMultiLine ? 'is-multiline' : ''} ${attachments.length > 0 ? 'has-attachments' : ''}`}>
         {/* Attachment Pills */}
         {attachments.length > 0 && (
           <div className="composer-attachments">
@@ -437,8 +442,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             <span>Transcribing your voice...</span>
           </div>
         ) : (
-          /* Single-row pill layout matching ChatGPT (Screenshot 1) */
-          <div className="composer-single-row">
+          /* Single-row pill or multiline card layout */
+          <div className={`composer-single-row ${isMultiLine ? 'is-multiline' : ''}`}>
             {/* Hidden file input */}
             <input
               ref={fileInputRef}

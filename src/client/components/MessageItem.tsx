@@ -214,9 +214,11 @@ export const MessageItem = React.memo<MessageItemProps>(
 
                 {/* Search In Progress Indicator: Only when searching before sources are received */}
                 {message.status === 'streaming' && !message.content && message.searchQuery && (!message.searchSources || message.searchSources.length === 0) && (
-                  <div className="search-in-progress">
-                    <Globe size={13} className="spin-animation" style={{ color: 'var(--accent-light)' }} />
-                    <span>Searching the web for <strong>"{message.searchQuery}"</strong>...</span>
+                  <div className="search-in-progress" title={message.searchQuery}>
+                    <Globe size={13} className="spin-animation" style={{ color: 'var(--accent-light)', flexShrink: 0 }} />
+                    <span className="search-in-progress-text">
+                      Searching the web for <strong>"{message.searchQuery.length > 70 ? `${message.searchQuery.slice(0, 67)}...` : message.searchQuery}"</strong>...
+                    </span>
                   </div>
                 )}
 
@@ -241,7 +243,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                 )}
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
+                  rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
                   urlTransform={(url) => url}
                   components={{
                     img({ src, alt, ...props }: any) {

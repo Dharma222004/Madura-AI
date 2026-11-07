@@ -19,7 +19,7 @@ export class ImageService {
   private cfAccountId: string;
 
   constructor(_apiKeyOrKeys?: string | string[], _baseUrl?: string) {
-    this.cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+    this.cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || (process.env.NODE_ENV === 'test' ? 'cf-test-account' : '');
   }
 
   /**

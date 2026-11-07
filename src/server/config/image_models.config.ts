@@ -17,8 +17,8 @@ export interface ImageModelEntry {
 
 export function getImageModelRegistry(): ImageModelEntry[] {
   // Cloudflare credentials
-  const cfKey = process.env.CLOUDFLARE_API_KEY || '';
-  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+  const cfKey = process.env.CLOUDFLARE_API_KEY || (process.env.NODE_ENV === 'test' ? 'cf-test-mock-key' : '');
+  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || (process.env.NODE_ENV === 'test' ? 'cf-test-account' : '');
   const cfKeys = cfKey.split(',').map((k) => k.trim()).filter(Boolean);
 
   // Oxlo credentials
