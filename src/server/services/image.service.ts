@@ -289,8 +289,13 @@ export class ImageService {
 
           if (response.ok) {
             const data = (await response.json()) as any;
-            const url = data.data?.[0]?.url || data.url || data.image_url;
-            if (url) return url;
+            const item = data.data?.[0] || data;
+            if (item?.url) return item.url;
+            if (item?.image_url) return item.image_url;
+            if (item?.b64_json) {
+              const b64 = String(item.b64_json);
+              return b64.startsWith('data:') ? b64 : `data:image/jpeg;base64,${b64}`;
+            }
           }
 
           if (response.status === 401 || response.status === 403 || response.status === 429) {

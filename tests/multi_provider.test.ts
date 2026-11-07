@@ -321,4 +321,69 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(localFallback).not.toHaveBeenCalled();
   });
+
+  it('routes oxlo model alias and deepseek-v3.2 to Oxlo API endpoint', async () => {
+    vi.stubEnv('OXLO_API_KEY', 'sk_test_oxlo_key');
+    vi.stubEnv('OXLO_BASE_URL', 'https://api.oxlo.ai/v1');
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => successfulResponse('Oxlo response'));
+    const provider = new MultiModelProvider();
+    const chunks: string[] = [];
+
+    // Test with model: 'oxlo' alias
+    const result = await provider.streamChat(
+      { model: 'oxlo', messages, temperature: 0.7, maxTokens: 1024 },
+      (chunk) => chunks.push(chunk)
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [endpoint, init] = fetchMock.mock.calls[0];
+    expect(endpoint).toBe('https://api.oxlo.ai/v1/chat/completions');
+    expect(JSON.parse(init!.body as string)).toEqual({
+      model: 'deepseek-v3.2',
+      messages,
+      temperature: 0.7,
+      max_tokens: 1024,
+      stream: true,
+    });
+    expect(init!.headers).toMatchObject({
+      Authorization: 'Bearer sk_test_oxlo_key',
+      Accept: 'text/event-stream',
+    });
+    expect(result.fullText).toBe('Oxlo response');
+  });
+
+  it('handles Oxlo object-style detail error response safely without crashing', async () => {
+    vi.stubEnv('OXLO_API_KEY', 'sk_test_oxlo_key_1,sk_test_oxlo_key_2');
+    vi.stubEnv('OXLO_BASE_URL', 'https://api.oxlo.ai/v1');
+
+    let callCount = 0;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // Return Oxlo's structured object detail error (e.g. rate limit / model access denied)
+        return new Response(
+          JSON.stringify({
+            detail: {
+              error: 'model_access_denied',
+              message: 'Your current plan does not include access',
+            },
+          }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return successfulResponse('Recovered on key 2');
+    });
+
+    const provider = new MultiModelProvider();
+    const chunks: string[] = [];
+
+    const result = await provider.streamChat(
+      { model: 'deepseek-v3.2', messages, temperature: 0.7, maxTokens: 1024 },
+      (chunk) => chunks.push(chunk)
+    );
+
+    expect(result.fullText).toBe('Recovered on key 2');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

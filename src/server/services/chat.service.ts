@@ -181,8 +181,8 @@ export class ChatService {
     });
     const hasActiveImages = activeImageAttachments.length > 0;
 
-    // When an image is attached, default to NVIDIA Nemotron 3 Nano Omni 30B (Vision)
-    // unless the user explicitly specified another vision-capable model
+    // When an image is attached, route to a vision-capable model
+    // unless the user explicitly specified a specific non-auto model
     if (hasActiveImages && (!model || model === 'auto' || model === 'default')) {
       effectiveModel = 'nemotron-omni';
     }
@@ -678,6 +678,91 @@ Guidelines:
       /\b(code|function|debug|algorithm|python|javascript|typescript|java|c\+\+|rust|golang|sql|regex|api|class|method|component|loop|array|async|await|compile|error|syntax|html|css|json|database|refactor|script|sdk)\b/i.test(clean) ||
       /\b(write a program|write a script|fix this bug|trace the error|create a function|implement a|write code|coding)\b/i.test(clean)
     );
+  }
+
+  /**
+   * Smart Auto-Router: Selects the best model for the given query.
+   * Uses fast rule-based classification — no LLM call needed.
+   *
+   * Routing strategy:
+   * - Image attached → nemotron-omni (vision)
+   * - Coding/programming → deepseek-v4.1-flash (strong at code)
+   * - Complex reasoning/math/analysis → auto (Mistral Large 4 on NVIDIA)
+   * - Quick/simple/greeting → gemini-flash (fast, high quality)
+   * - General knowledge → auto (Mistral Large 4 on NVIDIA)
+   */
+  private selectBestModel(prompt: string, attachments?: Attachment[]): string {
+    const clean = prompt.toLowerCase().trim();
+    const wordCount = clean.split(/\s+/).filter(Boolean).length;
+
+    // 0. Explicit mention of Oxlo in the user prompt
+    if (/\b(oxlo|deepseek\s*v3|deepseek\s*3)\b/i.test(clean)) {
+      return 'deepseek-v3.2';
+    }
+
+    // 1. Image attached → vision model (handled separately, but catch here too)
+    const hasImages = (attachments || []).some((a) => {
+      const mime = (a.mimeType || '').toLowerCase();
+      const name = (a.fileName || '').toLowerCase();
+      return mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name);
+    });
+    if (hasImages) return 'nemotron-omni';
+
+    // 2. Greetings and very short casual queries → fast model
+    if (/^(hi|hello|hey|howdy|hola|good\s*(morning|afternoon|evening|night|day))[\s!.]*$/i.test(clean)) {
+      return 'gemini-flash';
+    }
+    if (/^(how are you|what's up|thank|thanks|ok|cool|nice|bye|goodbye)[\s!?.]*$/i.test(clean)) {
+      return 'gemini-flash';
+    }
+
+    // 3. Identity/self questions → fast model (no heavy computation needed)
+    if (/\b(who are you|what model|what is ai|your name|who made you|what can you do)\b/i.test(clean)) {
+      return 'gemini-flash';
+    }
+
+    // 4. Multilingual, translation, or non-English queries → DeepSeek V3.2 (Oxlo)
+    if (
+      /\b(translate|translation|in spanish|in french|in german|in hindi|in chinese|in japanese|in russian|in arabic|in tamil)\b/i.test(clean) ||
+      /[\u4e00-\u9fa5\u0600-\u06ff\u0400-\u04ff\u0900-\u097f\u0b80-\u0bff\u3040-\u30ff]/.test(prompt)
+    ) {
+      return 'deepseek-v3.2';
+    }
+
+    // 5. Coding/programming → DeepSeek V4.1 Flash (strong at code generation)
+    if (this.isCodingQuery(prompt)) {
+      return 'deepseek-v4.1-flash';
+    }
+
+    // 5. Math/reasoning/analysis → Mistral Large 4 (strong reasoning)
+    if (
+      /\b(solve|calculate|integral|derivative|matrix|factorial|equation|theorem|proof|mathematical)\b/i.test(clean) ||
+      /\b(analyze|analysis|compare|comparison|evaluate|explain in detail|deep dive|comprehensive)\b/i.test(clean) ||
+      /\b(step by step|reason|reasoning|think|thinking|logic|logical)\b/i.test(clean)
+    ) {
+      return 'auto';
+    }
+
+    // 6. Creative writing → Mistral Large 4 (good at creative text)
+    if (
+      /^(write|draft|compose|create)\s+(a |an |me )?(poem|story|essay|letter|email|article|blog|speech|song)/i.test(clean) ||
+      /\b(creative writing|storytelling|narrative)\b/i.test(clean)
+    ) {
+      return 'auto';
+    }
+
+    // 7. Long/complex prompts (>50 words) → Mistral Large 4
+    if (wordCount > 50) {
+      return 'auto';
+    }
+
+    // 8. Quick factual questions (<15 words) → Gemini Flash (fast response)
+    if (wordCount <= 15 && !this.isCodingQuery(prompt)) {
+      return 'gemini-flash';
+    }
+
+    // 9. Default: Mistral Large 4 (best general-purpose)
+    return 'auto';
   }
 
   private generateTitleFromPrompt(prompt: string): string {

@@ -250,8 +250,10 @@ export function buildModelRegistry(): ModelConfig[] {
     false
   );
 
-  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || 'b97097b151c5a207564bdeea82df6632';
-  const cloudflareBase = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1`;
+  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+  const cloudflareBase = cfAccountId
+    ? `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1`
+    : 'https://api.cloudflare.com/client/v4/accounts/default/ai/v1';
 
   const cloudflareKeys = resolveProviderKeys(
     process.env.CLOUDFLARE_API_KEY || '',
@@ -494,30 +496,30 @@ export function buildModelRegistry(): ModelConfig[] {
       crossProviderFallbackId: 'gemini-flash',
     },
     // ── Oxlo Models ───────────────────────────────────────────────────────────
-    // 11. Deepseek V3.2 — Oxlo
+    // 11. Deepseek V3.2 — Oxlo (Flagship 671B MoE)
     {
       id: 'deepseek-v3.2',
-      displayName: 'Deepseek V 3.2',
+      displayName: 'DeepSeek V3.2 (Oxlo)',
       realModel: 'deepseek-v3.2',
       baseUrl: oxloBase,
       apiKey: oxloKeys[0] || '',
       apiKeys: oxloKeys,
       providerName: 'oxlo',
-      description: 'DeepSeek V3.2 model',
+      description: 'DeepSeek V3.2 671B MoE on Oxlo API',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'cf-qwen3.8-27b',
     },
     // 12. Mistral 7B — Oxlo
     {
       id: 'mistral-7b',
-      displayName: 'Mistral 7B',
+      displayName: 'Mistral 7B (Oxlo)',
       realModel: 'mistral-7b',
       baseUrl: oxloBase,
       apiKey: oxloKeys[0] || '',
       apiKeys: oxloKeys,
       providerName: 'oxlo',
-      description: 'Mistral 7B model',
+      description: 'Mistral 7B on Oxlo API',
       contextWindow: 32000,
       supportsVision: false,
       crossProviderFallbackId: 'auto',
@@ -525,13 +527,13 @@ export function buildModelRegistry(): ModelConfig[] {
     // 13. Llama 3.2 3B — Oxlo
     {
       id: 'llama-3.2-3b',
-      displayName: 'Llama3.2',
+      displayName: 'Llama 3.2 3B (Oxlo)',
       realModel: 'llama-3.2-3b',
       baseUrl: oxloBase,
       apiKey: oxloKeys[0] || '',
       apiKeys: oxloKeys,
       providerName: 'oxlo',
-      description: 'Llama 3.2 3B model',
+      description: 'Llama 3.2 3B on Oxlo API',
       contextWindow: 128000,
       supportsVision: false,
       crossProviderFallbackId: 'auto',
@@ -741,6 +743,23 @@ export class MultiModelProvider implements AIProvider {
       oxlo: oxloKeys,
       cloudflare: cloudflareKeys,
     });
+
+    // Log provider status at startup
+    const providerStatus: string[] = [];
+    for (const [name, keys] of Object.entries({
+      nvidia: nvidiaKeys, gemini: geminiKeys, groq: groqKeys,
+      openrouter: openrouterKeys, oxlo: oxloKeys, cloudflare: cloudflareKeys,
+    })) {
+      const validKeys = keys.filter((k: string) => k && k.trim());
+      if (validKeys.length > 0) {
+        providerStatus.push(`${name.toUpperCase()}: ${validKeys.length} key(s) ✓`);
+      } else {
+        providerStatus.push(`${name.toUpperCase()}: no keys ✗`);
+      }
+    }
+    console.log(`[MultiModelProvider] Provider status: ${providerStatus.join(' | ')}`);
+    console.log(`[MultiModelProvider] Default model: ${this.defaultModel.displayName} (${this.defaultModel.realModel}) via ${this.defaultModel.providerName}`);
+    console.log(`[MultiModelProvider] Chat models: ${this.registry.filter(m => !['stable-diffusion-1.5','cf-flux-2-klein-4b','cf-flux-2-klein-9b'].includes(m.id)).length} | Image models: 3`);
   }
 
   getModelConfig(modelId?: string): ModelConfig {
@@ -758,25 +777,68 @@ export class MultiModelProvider implements AIProvider {
     ) {
       return this.registry.find((m) => m.id === 'auto') || this.defaultModel;
     }
-    const needle = modelId.toLowerCase();
-    const found = this.registry.find(
-      (m) =>
-        m.id.toLowerCase() === needle ||
-        m.realModel.toLowerCase() === needle ||
-        m.displayName.toLowerCase() === needle
-    );
+
+    const needle = modelId.toLowerCase().trim();
+
+    // Oxlo model alias routes
+    if (
+      needle === 'oxlo' ||
+      needle === 'oxlo-ai' ||
+      needle === 'oxlo-chat' ||
+      needle === 'oxlo-deepseek' ||
+      needle === 'oxlo-deepseek-v3.2'
+    ) {
+      return this.registry.find((m) => m.id === 'deepseek-v3.2') || this.defaultModel;
+    }
+    if (needle === 'oxlo-mistral' || needle === 'oxlo-mistral-7b') {
+      return this.registry.find((m) => m.id === 'mistral-7b') || this.defaultModel;
+    }
+    if (needle === 'oxlo-llama' || needle === 'oxlo-llama-3.2' || needle === 'oxlo-llama-3.2-3b') {
+      return this.registry.find((m) => m.id === 'llama-3.2-3b') || this.defaultModel;
+    }
+
+    const cleanNeedle = needle.replace(/[\s\-_()]+/g, '');
+
+    const found = this.registry.find((m) => {
+      const idClean = m.id.toLowerCase().replace(/[\s\-_()]+/g, '');
+      const realClean = m.realModel.toLowerCase().replace(/[\s\-_()]+/g, '');
+      const displayClean = m.displayName.toLowerCase().replace(/[\s\-_()]+/g, '');
+      return (
+        idClean === cleanNeedle ||
+        realClean === cleanNeedle ||
+        displayClean === cleanNeedle ||
+        idClean.includes(cleanNeedle) ||
+        cleanNeedle.includes(idClean)
+      );
+    });
+
     return found || this.defaultModel;
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    return this.registry.map((m) => ({
-      id: m.id,
-      name: m.displayName,
-      description: m.description,
-      contextWindow: m.contextWindow,
-      supportsVision: m.supportsVision,
-      isDefault: m.isDefault,
-    }));
+    // Filter out image-only models and models with no API key configured
+    const IMAGE_ONLY_IDS = new Set([
+      'stable-diffusion-1.5',
+      'cf-flux-2-klein-4b',
+      'cf-flux-2-klein-9b',
+    ]);
+
+    return this.registry
+      .filter((m) => {
+        // Exclude image-only models from chat model selector
+        if (IMAGE_ONLY_IDS.has(m.id)) return false;
+        // Exclude models with no API key (provider not configured)
+        if (!m.apiKey && (!m.apiKeys || m.apiKeys.length === 0 || !m.apiKeys[0])) return false;
+        return true;
+      })
+      .map((m) => ({
+        id: m.id,
+        name: m.displayName,
+        description: m.description,
+        contextWindow: m.contextWindow,
+        supportsVision: m.supportsVision,
+        isDefault: m.isDefault,
+      }));
   }
 
   private stripThinkTags(text: string): string {
@@ -885,7 +947,10 @@ export class MultiModelProvider implements AIProvider {
 
       const isReasoning = cfg.isReasoning ||
         modelToSend.includes('gpt-oss') ||
-        modelToSend.includes('nemotron');
+        modelToSend.includes('nemotron') ||
+        modelToSend.includes('deepseek-r1') ||
+        modelToSend.includes('deepseek-v4') ||
+        modelToSend.includes('glm');
 
       let payload: Record<string, any>;
       if (isResponsesApi) {
@@ -1000,8 +1065,21 @@ export class MultiModelProvider implements AIProvider {
             let errMsg = errorText;
             try {
               const errObj = JSON.parse(errorText);
-              errMsg = errObj.detail || errObj.message || errObj.error?.message || errorText;
+              if (typeof errObj.detail === 'string') {
+                errMsg = errObj.detail;
+              } else if (errObj.detail && typeof errObj.detail === 'object') {
+                errMsg = errObj.detail.message || JSON.stringify(errObj.detail);
+              } else if (typeof errObj.message === 'string') {
+                errMsg = errObj.message;
+              } else if (errObj.error) {
+                errMsg = typeof errObj.error === 'string'
+                  ? errObj.error
+                  : (errObj.error.message || JSON.stringify(errObj.error));
+              }
             } catch { /* keep raw */ }
+            if (typeof errMsg !== 'string') {
+              errMsg = JSON.stringify(errMsg);
+            }
 
             if (response.status === 400 && errMsg.includes('content-blocked')) {
               throw new Error(

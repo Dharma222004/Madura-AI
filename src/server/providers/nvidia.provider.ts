@@ -294,9 +294,22 @@ export class NvidiaProvider implements AIProvider {
             let parsedErrorTitle = '';
             try {
               const errObj = JSON.parse(errorText);
-              parsedErrorTitle = errObj.detail || errObj.message || errObj.title || errorText;
+              if (typeof errObj.detail === 'string') {
+                parsedErrorTitle = errObj.detail;
+              } else if (errObj.detail && typeof errObj.detail === 'object') {
+                parsedErrorTitle = errObj.detail.message || JSON.stringify(errObj.detail);
+              } else if (typeof errObj.message === 'string') {
+                parsedErrorTitle = errObj.message;
+              } else if (typeof errObj.title === 'string') {
+                parsedErrorTitle = errObj.title;
+              } else {
+                parsedErrorTitle = errorText;
+              }
             } catch {
               parsedErrorTitle = errorText;
+            }
+            if (typeof parsedErrorTitle !== 'string') {
+              parsedErrorTitle = JSON.stringify(parsedErrorTitle);
             }
 
             if (response.status === 401 || response.status === 403) {
