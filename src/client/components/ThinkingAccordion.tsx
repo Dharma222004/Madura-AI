@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { Brain, ChevronDown, ChevronUp, Copy, Check, Sparkles } from 'lucide-react';
+import { formatMarkdownContent } from '../utils/markdown.js';
 
 interface ThinkingAccordionProps {
   thought: string;
@@ -163,7 +164,7 @@ export const ThinkingAccordion = React.memo<ThinkingAccordionProps>(
               remarkPlugins={[remarkGfm, remarkMath]}
               urlTransform={(url) => url}
             >
-              {thought || '*Synthesizing step-by-step reasoning plan...*'}
+              {formatMarkdownContent(thought) || '*Synthesizing step-by-step reasoning plan...*'}
             </ReactMarkdown>
             {isActivelyThinking && <span className="thinking-typing-cursor" />}
           </div>

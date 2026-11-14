@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Message } from '../../types/index.js';
 import { ThinkingAccordion } from './ThinkingAccordion.js';
+import { formatMarkdownContent } from '../utils/markdown.js';
 const MermaidDiagram = lazy(() => import('./MermaidDiagram.js'));
 const InteractiveDiagram = lazy(() => import('./InteractiveDiagram.js'));
 
@@ -370,7 +371,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                     },
                   }}
                 >
-                  {message.content}
+                  {formatMarkdownContent(message.content)}
                 </ReactMarkdown>
                 </div>
               </div>
