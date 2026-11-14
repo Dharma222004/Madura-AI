@@ -244,6 +244,35 @@ export function streamChat(params: {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let currentEvent = 'message';
+      let currentData = '';
+      let doneReceived = false;
+
+      const dispatchEvent = () => {
+        if (!currentData) return;
+        try {
+          const data = JSON.parse(currentData);
+          if (currentEvent === 'token' && data.token) {
+            params.onToken(data.token);
+          } else if (currentEvent === 'thought_token' && data.token && params.onThoughtToken) {
+            params.onThoughtToken(data.token);
+          } else if (currentEvent === 'title' && data.title && params.onTitle) {
+            params.onTitle(data.title, data.conversationId || '');
+          } else if (currentEvent === 'search_start' && params.onSearchStart) {
+            params.onSearchStart(data.query);
+          } else if (currentEvent === 'search_done' && params.onSearchDone) {
+            params.onSearchDone(data.sources || []);
+          } else if (currentEvent === 'done') {
+            doneReceived = true;
+            params.onDone(data);
+          } else if (currentEvent === 'error') {
+            params.onError(data.error || 'Chat stream failed');
+          }
+        } catch {
+          // Ignore partial or malformed chunk
+        }
+        currentData = '';
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -253,40 +282,48 @@ export function streamChat(params: {
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
-        let currentEvent = 'message';
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          if (trimmed.startsWith('event: ')) {
-            currentEvent = trimmed.slice(7).trim();
+          if (!trimmed) {
+            dispatchEvent();
+            currentEvent = 'message';
             continue;
           }
 
-          if (trimmed.startsWith('data: ')) {
-            const dataStr = trimmed.slice(6);
-            try {
-              const data = JSON.parse(dataStr);
-              if (currentEvent === 'token' && data.token) {
-                params.onToken(data.token);
-              } else if (currentEvent === 'thought_token' && data.token && params.onThoughtToken) {
-                params.onThoughtToken(data.token);
-              } else if (currentEvent === 'title' && data.title && params.onTitle) {
-                params.onTitle(data.title, data.conversationId || '');
-              } else if (currentEvent === 'search_start' && params.onSearchStart) {
-                params.onSearchStart(data.query);
-              } else if (currentEvent === 'search_done' && params.onSearchDone) {
-                params.onSearchDone(data.sources || []);
-              } else if (currentEvent === 'done') {
-                params.onDone(data);
-              } else if (currentEvent === 'error') {
-                params.onError(data.error || 'Chat stream failed');
-              }
-            } catch {
-              // Ignore partial chunk
-            }
+          if (trimmed.startsWith('event: ')) {
+            currentEvent = trimmed.slice(7).trim();
+          } else if (trimmed.startsWith('data: ')) {
+            const chunk = trimmed.slice(6);
+            currentData = currentData ? `${currentData}\n${chunk}` : chunk;
           }
         }
+      }
+
+      // Flush remaining line in buffer
+      if (buffer.trim()) {
+        const trimmed = buffer.trim();
+        if (trimmed.startsWith('event: ')) {
+          currentEvent = trimmed.slice(7).trim();
+        } else if (trimmed.startsWith('data: ')) {
+          const chunk = trimmed.slice(6);
+          currentData = currentData ? `${currentData}\n${chunk}` : chunk;
+        }
+      }
+      dispatchEvent();
+
+      // Ensure that if the stream ended without an explicit done event, we complete cleanly
+      if (!doneReceived && !controller.signal.aborted) {
+        params.onDone({
+          conversation: { id: params.conversationId || '', title: 'Conversation', createdAt: Date.now(), updatedAt: Date.now() },
+          assistantMessage: {
+            id: `asst-${Date.now()}`,
+            conversationId: params.conversationId || '',
+            role: 'assistant',
+            content: '',
+            status: 'completed',
+            createdAt: Date.now(),
+          },
+        });
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal.aborted) {

@@ -227,19 +227,32 @@ export function useChat(
           abortControllerRef.current = null;
 
           // If this was a new conversation, notify parent
-          if (!activeConversationId && onConversationCreated) {
+          if (!activeConversationId && onConversationCreated && data?.conversation?.id) {
             onConversationCreated(data.conversation);
           }
 
-          // Replace optimistic messages with saved messages
+          // Replace optimistic messages with saved messages (guarantee status: 'completed')
           setMessages(prev => {
+            const existingAssistant = prev.find(m => m.id === tempAssistantMsgId);
+            const content = data?.assistantMessage?.content || existingAssistant?.content || streamBufferRef.current.content;
+            const thought = data?.assistantMessage?.thought || existingAssistant?.thought || streamBufferRef.current.thought;
+
             const filtered = prev.filter(
               m => m.id !== tempUserMsgId && m.id !== tempAssistantMsgId
             );
             return [
               ...filtered,
-              { ...optimisticUserMsg, conversationId: data.conversation.id },
-              data.assistantMessage,
+              { ...optimisticUserMsg, conversationId: data?.conversation?.id || activeConversationId || '' },
+              data?.assistantMessage?.id ? {
+                ...data.assistantMessage,
+                content: data.assistantMessage.content || content,
+                status: 'completed' as const,
+              } : {
+                ...optimisticAssistantMsg,
+                content,
+                thought: thought || undefined,
+                status: 'completed' as const,
+              },
             ];
           });
         },
