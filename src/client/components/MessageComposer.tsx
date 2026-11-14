@@ -547,7 +547,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           <div className="composer-bottom-model-slot">
             <ModelSelector
               models={models}
-              selectedModel={selectedModel || 'auto'}
+              selectedModel={selectedModel || (models[0]?.id ?? '')}
               onSelect={onSelectModel}
             />
           </div>

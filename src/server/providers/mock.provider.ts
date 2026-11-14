@@ -29,7 +29,7 @@ export class MockProvider implements AIProvider {
     signal?: AbortSignal,
     onThoughtChunk?: (thoughtToken: string) => void
   ): Promise<StreamChatResult> {
-    const isReasoning = Boolean(onThoughtChunk && (options.model?.includes('oss') || options.model === 'auto' || options.model === 'madura-4.0'));
+    const isReasoning = Boolean(onThoughtChunk && (options.model?.includes('oss') || options.model === 'mistral-large-4' || options.model === 'auto' || options.model === 'madura-4.0'));
     let thoughtText = '';
     let thoughtStartTime: number | null = null;
     let thoughtDurationMs: number | undefined;

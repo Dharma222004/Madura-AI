@@ -20,7 +20,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const current =
     models.find((m) => m.id === selectedModel) ||
-    models.find((m) => m.isDefault) ||
     models[0];
 
   useEffect(() => {

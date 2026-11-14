@@ -166,7 +166,7 @@ export class ChatService {
       };
     }
 
-    let effectiveModel = model || process.env.DEFAULT_MODEL || 'auto';
+    let effectiveModel = model || process.env.DEFAULT_MODEL || 'mistral-large-4';
 
     // Detect active image attachments
     const activeImageAttachments = (params.attachments || []).filter((a) => {
@@ -183,7 +183,7 @@ export class ChatService {
 
     // When an image is attached, route to a vision-capable model
     // unless the user explicitly specified a specific non-auto model
-    if (hasActiveImages && (!model || model === 'auto' || model === 'default')) {
+    if (hasActiveImages && (!model || model === 'auto' || model === 'default' || model === 'mistral-large-4')) {
       effectiveModel = 'nemotron-omni';
     }
 
@@ -653,13 +653,13 @@ Guidelines:
     let generatedTitle = '';
     try {
       await this.nvidiaProvider.streamChat(
-        { model: 'auto', messages: titleMessages, temperature: 0.3, maxTokens: 20 },
+        { model: 'mistral-large-4', messages: titleMessages, temperature: 0.3, maxTokens: 20 },
         (token) => { generatedTitle += token; }
       );
     } catch {
       try {
         await this.mockProvider.streamChat(
-          { model: 'auto', messages: titleMessages, temperature: 0.3, maxTokens: 20 },
+          { model: 'mistral-large-4', messages: titleMessages, temperature: 0.3, maxTokens: 20 },
           (token) => { generatedTitle += token; }
         );
       } catch {
@@ -748,7 +748,7 @@ Guidelines:
       /\b(analyze|analysis|compare|comparison|evaluate|explain in detail|deep dive|comprehensive)\b/i.test(clean) ||
       /\b(step by step|reason|reasoning|think|thinking|logic|logical)\b/i.test(clean)
     ) {
-      return 'auto';
+      return 'mistral-large-4';
     }
 
     // 6. Creative writing → Mistral Large 4 (good at creative text)
@@ -756,12 +756,12 @@ Guidelines:
       /^(write|draft|compose|create)\s+(a |an |me )?(poem|story|essay|letter|email|article|blog|speech|song)/i.test(clean) ||
       /\b(creative writing|storytelling|narrative)\b/i.test(clean)
     ) {
-      return 'auto';
+      return 'mistral-large-4';
     }
 
     // 7. Long/complex prompts (>50 words) → Mistral Large 4
     if (wordCount > 50) {
-      return 'auto';
+      return 'mistral-large-4';
     }
 
     // 8. Quick factual questions (<15 words) → Gemini Flash (fast response)
@@ -770,7 +770,7 @@ Guidelines:
     }
 
     // 9. Default: Mistral Large 4 (best general-purpose)
-    return 'auto';
+    return 'mistral-large-4';
   }
 
   private generateTitleFromPrompt(prompt: string): string {

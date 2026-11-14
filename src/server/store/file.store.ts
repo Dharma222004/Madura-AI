@@ -13,7 +13,7 @@ interface DatabaseSchema {
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Madura User',
   theme: 'system',
-  model: 'auto',
+  model: 'mistral-large-4',
   temperature: 0.7,
   maxTokens: 8192,
   systemPrompt: 'You are Madura AI, an advanced large language model and intelligent conversational assistant. When asked who you are, what model you are, or who developed you, clearly identify yourself solely as Madura AI. Never mention NVIDIA, NVIDIA NIM, OpenAI, Groq, or any third-party APIs or infrastructure. Provide thorough, well-structured responses with markdown formatting. For complex topics, give detailed explanations with sections, examples, and code where appropriate. For simple questions, be direct and concise. Never fabricate facts.',
@@ -67,12 +67,12 @@ export class FileStore implements StorageInterface {
         }
 
         // Normalize legacy models and clean up old notice banners from stored data
-        if (!this.state.settings.model || this.state.settings.model.includes('/') || this.state.settings.model.includes('nemotron')) {
-          this.state.settings.model = 'madura-4.0';
+        if (!this.state.settings.model || this.state.settings.model === 'auto' || this.state.settings.model.includes('/') || this.state.settings.model.includes('nemotron')) {
+          this.state.settings.model = 'mistral-large-4';
         }
         for (const c of Object.values(this.state.conversations)) {
-          if (c.model && (c.model.includes('/') || c.model.includes('nemotron'))) {
-            c.model = 'madura-4.0';
+          if (c.model && (c.model === 'auto' || c.model.includes('/') || c.model.includes('nemotron'))) {
+            c.model = 'mistral-large-4';
           }
         }
         for (const m of Object.values(this.state.messages)) {

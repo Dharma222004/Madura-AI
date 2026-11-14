@@ -2,7 +2,7 @@
  * Madura AI — Multi-Provider Gateway
  *
  * Routes each model ID to the correct API key, base URL, and real model name.
- * Default model: Mistral Large 4 via NVIDIA NIM (displayed in UI as "Auto").
+ * Default model: Mistral Large 4 via NVIDIA NIM (first model in registry).
  * Supports Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Nvidia Ultron.
  */
 
@@ -263,16 +263,15 @@ export function buildModelRegistry(): ModelConfig[] {
   );
 
   return [
-    // 1. Auto (Default Model) — NVIDIA NIM Mistral Large 4
+    // 1. Mistral Large 4 — NVIDIA NIM
     {
-      id: 'auto',
-      displayName: 'Auto',
+      id: 'mistral-large-4',
+      displayName: 'Mistral Large 4',
       realModel: process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL,
       baseUrl: nvidiaBase,
       apiKey: nvidiaKeys[0] || '',
       apiKeys: nvidiaKeys,
       providerName: 'nvidia',
-      isDefault: true,
       description: 'Mistral Large 4',
       contextWindow: 128000,
       supportsVision: false,
@@ -290,7 +289,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Fast multimodal model',
       contextWindow: 1000000,
       supportsVision: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 3. Qwen 3.8 — Groq Qwen 3.8
     {
@@ -348,7 +347,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 6. Nemotron Omni — NVIDIA NIM Image Recognition & Multimodal Reasoning
     {
@@ -378,7 +377,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 8. Deepseek-v4 Flash — NVIDIA NIM (outputs <think> reasoning tags)
     {
@@ -393,7 +392,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 9. GLM 5.3 Flash — NVIDIA NIM (outputs <think> reasoning tags — must be treated as reasoning)
     {
@@ -408,7 +407,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 10. Muse-Glimmer-30B — NVIDIA NIM
     {
@@ -422,7 +421,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Meta Muse Glimmer 30B model',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // ── OpenRouter Models ──────────────────────────────────────────────────────
     // 6. Nemotron 3.5 Super — OpenRouter (free)
@@ -465,7 +464,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Recursive Flint model',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 9. Xingchen — OpenRouter (free)
     {
@@ -479,7 +478,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Xingchen AGI 29B model',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 10. Gemma-4 31B — OpenRouter (free)
     {
@@ -522,7 +521,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Mistral 7B on Oxlo API',
       contextWindow: 32000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 13. Llama 3.2 3B — Oxlo
     {
@@ -536,7 +535,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Llama 3.2 3B on Oxlo API',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 14. Stable Diffusion 1.5 — Oxlo (image generation)
     {
@@ -550,7 +549,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'AI image generation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // ── Cloudflare Workers AI Models ──────────────────────────────────────────
     // 15. Qwen 3.8 27B — Cloudflare Workers AI
@@ -594,7 +593,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 18. GLM 4.7 Flash — Cloudflare Workers AI
     {
@@ -639,7 +638,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 21. Qwen3 30B FP8 — Cloudflare Workers AI
     {
@@ -653,7 +652,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Qwen3 30B FP8 on Cloudflare Workers AI',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 22. Flux-2 Klein 4B — Cloudflare Workers AI (Image Creation)
     {
@@ -667,7 +666,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Black Forest Labs Flux-2 Klein 4B image creation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
     // 23. Flux-2 Klein 9B — Cloudflare Workers AI (Image Creation)
     {
@@ -681,7 +680,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Black Forest Labs Flux-2 Klein 9B image creation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'auto',
+      crossProviderFallbackId: 'mistral-large-4',
     },
   ];
 }
@@ -775,7 +774,7 @@ export class MultiModelProvider implements AIProvider {
       modelId === 'madura-4.0-turbo' ||
       modelId === 'madura-turbo'
     ) {
-      return this.registry.find((m) => m.id === 'auto') || this.defaultModel;
+      return this.defaultModel;
     }
 
     const needle = modelId.toLowerCase().trim();
@@ -837,7 +836,6 @@ export class MultiModelProvider implements AIProvider {
         description: m.description,
         contextWindow: m.contextWindow,
         supportsVision: m.supportsVision,
-        isDefault: m.isDefault,
       }));
   }
 

@@ -55,7 +55,8 @@ describe('AI Providers', () => {
     it('should return available model metadata', async () => {
       const models = await provider.listModels();
       expect(models.length).toBeGreaterThan(0);
-      expect(models.some(m => m.id === 'auto')).toBe(true);
+      expect(models.some(m => m.id === 'mistral-large-4')).toBe(true);
+      expect(models.some(m => m.id === 'auto')).toBe(false);
     });
 
     it('should report healthy diagnostic connection', async () => {

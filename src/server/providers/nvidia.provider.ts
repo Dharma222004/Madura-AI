@@ -4,12 +4,11 @@ import { DEFAULT_CHAT_MODEL } from './model.config.js';
 
 export const CLEAN_MODELS: ModelInfo[] = [
   {
-    id: 'auto',
-    name: 'Auto',
+    id: 'mistral-large-4',
+    name: 'Mistral Large 4',
     description: 'Mistral Large 4',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: true,
   },
   {
     id: 'gemini-flash',
@@ -17,7 +16,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Fast multimodal model',
     contextWindow: 1000000,
     supportsVision: true,
-    isDefault: false,
   },
   {
     id: 'qwen-3.8',
@@ -25,7 +23,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'High performance model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'gpt-oss-120b',
@@ -33,7 +30,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'High-speed 120B model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'nvidia-ultron',
@@ -41,7 +37,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Deep reasoning model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'nemotron-lightning',
@@ -49,7 +44,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'High-speed 30B reasoning model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'nemotron-omni',
@@ -57,7 +51,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Image recognition & omni reasoning model',
     contextWindow: 128000,
     supportsVision: true,
-    isDefault: false,
   },
   {
     id: 'minimax-m3.1-flash',
@@ -65,7 +58,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'High-speed Minimax reasoning model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'deepseek-v4.1-flash',
@@ -73,7 +65,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'DeepSeek V4.1 Flash model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'glm-5.3-flash',
@@ -81,7 +72,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'GLM 5.3 Flash model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'muse-glimmer-30b',
@@ -89,7 +79,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Meta Muse Glimmer 30B model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   // ── OpenRouter Models ──────────────────────────────────────────────────────
   {
@@ -98,7 +87,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Nemotron vision-language model',
     contextWindow: 128000,
     supportsVision: true,
-    isDefault: false,
   },
   {
     id: 'gemma-4',
@@ -106,7 +94,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Google Gemma 4 26B',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'recursive',
@@ -114,7 +101,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Recursive Flint model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'xingchen',
@@ -122,7 +108,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Xingchen AGI 29B model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'gemma-4-31b',
@@ -130,7 +115,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Google Gemma 4 31B',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   // ── Oxlo Models ───────────────────────────────────────────────────────────
   {
@@ -139,7 +123,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'DeepSeek V3.2 model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'mistral-7b',
@@ -147,7 +130,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Mistral 7B model',
     contextWindow: 32000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'llama-3.2-3b',
@@ -155,7 +137,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'Llama 3.2 3B model',
     contextWindow: 128000,
     supportsVision: false,
-    isDefault: false,
   },
   {
     id: 'stable-diffusion-1.5',
@@ -163,7 +144,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     description: 'AI image generation',
     contextWindow: 1024,
     supportsVision: false,
-    isDefault: false,
   },
 ];
 

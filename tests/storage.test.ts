@@ -21,7 +21,7 @@ describe('FileStore Persistence', () => {
   it('should initialize and return default settings', async () => {
     const settings = await store.getSettings();
     expect(settings).toBeDefined();
-    expect(settings.model).toBe('auto');
+    expect(settings.model).toBe('mistral-large-4');
     expect(settings.temperature).toBe(0.7);
   });
 

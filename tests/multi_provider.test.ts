@@ -99,8 +99,9 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(result.fullText).toBe('Hello!');
     expect(result.thought).toBeUndefined();
     expect(result.finishReason).toBe('stop');
-    expect((await provider.listModels()).find((model) => model.id === 'auto'))
-      .toMatchObject({ name: 'Auto', isDefault: true });
+    expect((await provider.listModels()).find((model) => model.id === 'mistral-large-4'))
+      .toMatchObject({ name: 'Mistral Large 4' });
+    expect((await provider.listModels()).find((model) => model.id === 'auto')).toBeUndefined();
   });
 
   it.each(['default', 'gpt-oss-20b', 'openai/gpt-oss-20b', MISTRAL_MODEL])(

@@ -15,7 +15,7 @@ import { ChevronDown, Check } from 'lucide-react';
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Madura User',
   theme: 'system',
-  model: 'auto',
+  model: '',
   temperature: 0.7,
   maxTokens: 8192,
   systemPrompt: '',
@@ -63,13 +63,22 @@ export const App: React.FC = () => {
 
   // Load models and settings
   useEffect(() => {
-    api.fetchSettings()
-      .then(s => setSettings(s))
-      .catch(err => console.error('Failed to load settings:', err));
-
-    api.fetchModels()
-      .then(m => setModels(m))
-      .catch(err => console.error('Failed to load models:', err));
+    Promise.all([
+      api.fetchSettings().catch(err => {
+        console.error('Failed to load settings:', err);
+        return DEFAULT_SETTINGS;
+      }),
+      api.fetchModels().catch(err => {
+        console.error('Failed to load models:', err);
+        return [] as ModelInfo[];
+      }),
+    ]).then(([s, m]) => {
+      setModels(m);
+      const chosenModel = (s.model && s.model !== 'auto' && m.some(model => model.id === s.model))
+        ? s.model
+        : (m[0]?.id || '');
+      setSettings({ ...s, model: chosenModel });
+    });
   }, []);
 
   // Reset scroll state on switching conversations
@@ -326,7 +335,7 @@ export const App: React.FC = () => {
                   onAddAttachment={addAttachment}
                   onRemoveAttachment={removeAttachment}
                   models={models}
-                  selectedModel={settings.model}
+                  selectedModel={settings.model || (models[0]?.id ?? '')}
                   onSelectModel={handleSelectModel}
                 />
               </div>
@@ -387,7 +396,7 @@ export const App: React.FC = () => {
                 onAddAttachment={addAttachment}
                 onRemoveAttachment={removeAttachment}
                 models={models}
-                selectedModel={settings.model}
+                selectedModel={settings.model || (models[0]?.id ?? '')}
                 onSelectModel={handleSelectModel}
               />
             </div>
