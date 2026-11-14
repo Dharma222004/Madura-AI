@@ -103,29 +103,370 @@ function sanitizeDiagramData(raw: DiagramData): DiagramData {
   };
 }
 
-interface NodePos {
+export interface NodePos {
   x: number;
   y: number;
   row: number;
   col: number;
 }
 
-interface GroupBand {
+export interface GroupBand {
+  id: string;
   group: DiagramGroup;
   x: number;
   y: number;
   w: number;
   h: number;
+  labelX: number;
+  labelY: number;
+  showLabel: boolean;
+  labelText: string;
 }
 
-interface CalcEdge {
+export interface CalcEdge {
   from: string;
   to: string;
   label?: string;
+  displayLabel?: string;
+  pillWidth: number;
   path: string;
   midX: number;
   midY: number;
   isCycleBack: boolean;
+}
+
+export function computeDiagramLayout(
+  data: DiagramData,
+  containerWidth = 750,
+  isTB = false
+) {
+  const nodes = data.nodes;
+  const n = nodes.length;
+  const isCycle = data.type === 'cycle';
+  const hasGroups = Array.isArray(data.groups) && data.groups.length > 0;
+
+  // Build edge list including cycle return loop if requested
+  const allEdges: DiagramEdge[] = [...data.edges];
+  if (isCycle && nodes.length > 1) {
+    const lastId = nodes[nodes.length - 1].id;
+    const firstId = nodes[0].id;
+    if (!allEdges.some((e) => e.from === lastId && e.to === firstId)) {
+      allEdges.push({ from: lastId, to: firstId, label: 'loop' });
+    }
+  }
+
+  // Measure maximum edge label to ensure colGap fits the pill with clearance
+  let maxEdgeLabelLen = 0;
+  allEdges.forEach((e) => {
+    if (e.label && e.label.trim().length > maxEdgeLabelLen) {
+      maxEdgeLabelLen = e.label.trim().length;
+    }
+  });
+
+  // Sizing constants
+  const isMobile = containerWidth < 520 || isTB;
+  const CARD_W = isMobile ? 250 : 190;
+  const CARD_H = 104;
+  const PAD = 36;
+
+  // Determine max columns allowed per row based on container width
+  let maxCols = 3;
+  if (isMobile) {
+    maxCols = 1;
+  } else if (containerWidth < 700) {
+    maxCols = 2;
+  } else if (containerWidth >= 1000 && n >= 8) {
+    maxCols = 4;
+  } else {
+    maxCols = 3;
+  }
+
+  // Dynamic horizontal & vertical gaps:
+  // colGap must comfortably fit the widest edge pill + arrow clearance on both sides
+  const badgeNeeded = maxEdgeLabelLen > 0 ? Math.round(maxEdgeLabelLen * 6.8 + 28) : 56;
+  const colGap = isMobile ? 0 : Math.max(76, Math.min(138, badgeNeeded));
+  const rowGap = isMobile ? 44 : (hasGroups ? 80 : 64);
+  const colStep = CARD_W + colGap;
+  const rowStep = CARD_H + rowGap;
+
+  // Calculate node coordinates
+  const positions = new Map<string, NodePos>();
+
+  if (isMobile) {
+    // Mobile: single vertical column
+    nodes.forEach((node, idx) => {
+      const x = PAD;
+      const y = PAD + (hasGroups ? 20 : 0) + idx * rowStep;
+      positions.set(node.id, { x, y, row: idx, col: 0 });
+    });
+  } else if (hasGroups) {
+    // Group-aware grid packing:
+    // Avoid splitting a group across a row break if the whole group (or its remaining nodes)
+    // fits cleanly on a new row.
+    let currentRow = 0;
+    let currentCol = 0;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+
+      // Count how many consecutive nodes from here belong to this same group
+      let groupRun = 1;
+      while (i + groupRun < nodes.length && nodes[i + groupRun].group === node.group) {
+        groupRun++;
+      }
+
+      const isStartOfGroup = i === 0 || nodes[i - 1].group !== node.group;
+      if (isStartOfGroup && currentCol > 0) {
+        const remainingCols = maxCols - currentCol;
+        if (groupRun <= maxCols && groupRun > remainingCols) {
+          currentRow++;
+          currentCol = 0;
+        }
+      }
+
+      const x = PAD + currentCol * colStep;
+      const y = PAD + 20 + currentRow * rowStep;
+      positions.set(node.id, { x, y, row: currentRow, col: currentCol });
+
+      currentCol++;
+      if (currentCol >= maxCols) {
+        currentRow++;
+        currentCol = 0;
+      }
+    }
+  } else {
+    // No groups: balanced grid
+    let colsPerRow = maxCols;
+    if (n <= 3) colsPerRow = n;
+    else if (n === 4) colsPerRow = 2; // balanced 2x2 grid
+    else if (n <= 6) colsPerRow = Math.min(3, maxCols);
+
+    nodes.forEach((node, idx) => {
+      const r = Math.floor(idx / colsPerRow);
+      const c = idx % colsPerRow;
+      const x = PAD + c * colStep;
+      const y = PAD + r * rowStep;
+      positions.set(node.id, { x, y, row: r, col: c });
+    });
+  }
+
+  // Group bounding bands
+  const groupBands: GroupBand[] = [];
+  if (hasGroups && data.groups) {
+    data.groups.forEach((group, gIdx) => {
+      const gNodes = nodes.filter((node) => node.group === group.id);
+      if (gNodes.length === 0) return;
+
+      // Group nodes by row
+      const rowMap = new Map<number, DiagramNode[]>();
+      gNodes.forEach((node) => {
+        const pos = positions.get(node.id)!;
+        const list = rowMap.get(pos.row) || [];
+        list.push(node);
+        rowMap.set(pos.row, list);
+      });
+
+      // Check if a single bounding box would enclose any nodes from other groups
+      const allXs = gNodes.map((n) => positions.get(n.id)!.x);
+      const allYs = gNodes.map((n) => positions.get(n.id)!.y);
+      const minX = Math.min(...allXs) - 16;
+      const minY = Math.min(...allYs) - 26;
+      const maxX = Math.max(...allXs) + CARD_W + 16;
+      const maxY = Math.max(...allYs) + CARD_H + 16;
+
+      const otherNodes = nodes.filter((n) => n.group !== group.id);
+      const hasInterlopers = otherNodes.some((other) => {
+        const oPos = positions.get(other.id);
+        if (!oPos) return false;
+        return (
+          oPos.x >= minX - 4 &&
+          oPos.x + CARD_W <= maxX + 4 &&
+          oPos.y >= minY - 4 &&
+          oPos.y + CARD_H <= maxY + 4
+        );
+      });
+
+      if (!hasInterlopers) {
+        // Clean single rectangle
+        groupBands.push({
+          id: `gb-${group.id}-${gIdx}`,
+          group,
+          x: minX,
+          y: minY,
+          w: maxX - minX,
+          h: maxY - minY,
+          labelX: minX + 14,
+          labelY: minY + 16,
+          showLabel: true,
+          labelText: group.label.toUpperCase(),
+        });
+      } else {
+        // Multi-row or segmented: create a band for each row
+        const sortedRows = Array.from(rowMap.keys()).sort((a, b) => a - b);
+        sortedRows.forEach((r, rIdx) => {
+          const rowNodes = rowMap.get(r)!;
+          const rXs = rowNodes.map((n) => positions.get(n.id)!.x);
+          const rYs = rowNodes.map((n) => positions.get(n.id)!.y);
+          const rMinX = Math.min(...rXs) - 16;
+          const rMinY = Math.min(...rYs) - 26;
+          const rMaxX = Math.max(...rXs) + CARD_W + 16;
+          const rMaxY = Math.max(...rYs) + CARD_H + 16;
+
+          groupBands.push({
+            id: `gb-${group.id}-${gIdx}-r${r}`,
+            group,
+            x: rMinX,
+            y: rMinY,
+            w: rMaxX - rMinX,
+            h: rMaxY - rMinY,
+            labelX: rMinX + 14,
+            labelY: rMinY + 16,
+            showLabel: true,
+            labelText: rIdx === 0 ? group.label.toUpperCase() : `${group.label.toUpperCase()} (CONT.)`,
+          });
+        });
+      }
+    });
+
+    // Label collision resolution pass:
+    // If any two labels have (x, y) coordinates within collision distance, offset them
+    for (let i = 0; i < groupBands.length; i++) {
+      for (let j = i + 1; j < groupBands.length; j++) {
+        const b1 = groupBands[i];
+        const b2 = groupBands[j];
+        if (!b1.showLabel || !b2.showLabel) continue;
+        if (Math.abs(b1.labelX - b2.labelX) < 120 && Math.abs(b1.labelY - b2.labelY) < 22) {
+          b2.labelY += 16;
+        }
+      }
+    }
+  }
+
+  // Compute curved edge paths
+  const calcEdges: CalcEdge[] = [];
+  allEdges.forEach((edge) => {
+    const src = positions.get(edge.from);
+    const tgt = positions.get(edge.to);
+    if (!src || !tgt) return;
+
+    const isCycleBack = isCycle && edge.from === nodes[nodes.length - 1]?.id && edge.to === nodes[0]?.id;
+
+    let sx: number, sy: number, tx: number, ty: number;
+    let path = '';
+    let midX = 0;
+    let midY = 0;
+
+    if (isCycleBack) {
+      // Outer loop returning from last node back to first node
+      sx = src.x + CARD_W / 2;
+      sy = src.y + CARD_H;
+      tx = tgt.x;
+      ty = tgt.y + CARD_H / 2;
+      const loopBottomY = Math.max(src.y, tgt.y) + CARD_H + 40;
+      const loopLeftX = Math.max(8, tgt.x - 24);
+
+      path = `M ${sx} ${sy} C ${sx} ${loopBottomY}, ${loopLeftX} ${loopBottomY}, ${loopLeftX} ${(sy + ty) / 2} C ${loopLeftX} ${ty}, ${loopLeftX} ${ty}, ${tx} ${ty}`;
+      midX = (sx + loopLeftX) / 2;
+      midY = loopBottomY;
+    } else if (src.row === tgt.row) {
+      // Both nodes in the same row: horizontal arrow right
+      sx = src.x + CARD_W;
+      sy = src.y + CARD_H / 2;
+      tx = tgt.x;
+      ty = tgt.y + CARD_H / 2;
+      const dx = tx - sx;
+      const cp1x = sx + dx * 0.5;
+      const cp2x = sx + dx * 0.5;
+      path = `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
+      midX = (sx + tx) / 2;
+      midY = (sy + ty) / 2;
+    } else if (tgt.row > src.row) {
+      if (isMobile) {
+        // Vertical stack: straight down
+        sx = src.x + CARD_W / 2;
+        sy = src.y + CARD_H;
+        tx = tgt.x + CARD_W / 2;
+        ty = tgt.y;
+        const dy = ty - sy;
+        path = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.5}, ${tx} ${sy + dy * 0.5}, ${tx} ${ty}`;
+        midX = sx;
+        midY = sy + dy * 0.5;
+      } else {
+        // Wrap from end of row down to start of next row: smooth S-curve
+        sx = src.x + CARD_W / 2;
+        sy = src.y + CARD_H;
+        tx = tgt.x + CARD_W / 2;
+        ty = tgt.y;
+        const channelY = (sy + ty) / 2;
+        path = `M ${sx} ${sy} C ${sx} ${channelY + 8}, ${tx} ${channelY - 8}, ${tx} ${ty}`;
+        midX = (sx + tx) / 2;
+        midY = channelY;
+      }
+    } else {
+      // Fallback backward arrow
+      sx = src.x;
+      sy = src.y + CARD_H / 2;
+      tx = tgt.x + CARD_W;
+      ty = tgt.y + CARD_H / 2;
+      const loopY = Math.min(src.y, tgt.y) - 24;
+      path = `M ${sx} ${sy} C ${sx - 30} ${loopY}, ${tx + 30} ${loopY}, ${tx} ${ty}`;
+      midX = (sx + tx) / 2;
+      midY = loopY;
+    }
+
+    // Format edge label and compute pill size
+    let displayLabel: string | undefined = undefined;
+    let pillWidth = 0;
+    if (edge.label) {
+      const rawLabel = edge.label.trim();
+      displayLabel = rawLabel.length > 22 ? rawLabel.slice(0, 20) + '…' : rawLabel;
+      const textWidth = displayLabel.length * 6.3 + 16;
+      if (src.row === tgt.row) {
+        pillWidth = Math.min(Math.max(colGap - 12, 28), textWidth);
+      } else {
+        pillWidth = Math.min(160, textWidth);
+      }
+    }
+
+    calcEdges.push({
+      from: edge.from,
+      to: edge.to,
+      label: edge.label,
+      displayLabel,
+      pillWidth,
+      path,
+      midX,
+      midY,
+      isCycleBack,
+    });
+  });
+
+  // Compute bounding canvas dimensions
+  let maxX = 0;
+  let maxY = 0;
+  positions.forEach((pos) => {
+    maxX = Math.max(maxX, pos.x + CARD_W + PAD);
+    maxY = Math.max(maxY, pos.y + CARD_H + PAD);
+  });
+  groupBands.forEach((gb) => {
+    maxX = Math.max(maxX, gb.x + gb.w + 24);
+    maxY = Math.max(maxY, gb.y + gb.h + 24);
+  });
+  if (isCycle) {
+    maxY += 48; // room for cycle bottom curve
+  }
+
+  return {
+    positions,
+    groupBands,
+    calcEdges,
+    CARD_W,
+    CARD_H,
+    colGap,
+    rowGap,
+    svgW: Math.max(maxX, 320),
+    svgH: Math.max(maxY, 200),
+  };
 }
 
 export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
@@ -192,194 +533,10 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
   }, [menuOpen]);
 
   // Layout calculation
-  const layout = useMemo(() => {
-    const nodes = data.nodes;
-    const n = nodes.length;
-
-    // Sizing constants
-    const isMobile = containerWidth < 520 || isTB;
-    const CARD_W = isMobile ? 250 : 190;
-    const CARD_H = 104;
-    const PAD = 36;
-
-    // Determine columns per row
-    let colsPerRow = 3;
-    if (isMobile) {
-      colsPerRow = 1;
-    } else if (containerWidth < 700) {
-      colsPerRow = 2;
-    } else {
-      if (n <= 3) colsPerRow = n;
-      else if (n === 4) colsPerRow = 2; // balanced 2x2 grid
-      else if (n <= 6) colsPerRow = 3; // 2 rows of 3 (or 3+2)
-      else if (n <= 8) colsPerRow = containerWidth >= 950 ? 4 : 3;
-      else colsPerRow = 3;
-    }
-
-    const colGap = isMobile ? 0 : 44;
-    const rowGap = isMobile ? 40 : 64;
-    const colStep = CARD_W + colGap;
-    const rowStep = CARD_H + rowGap;
-
-    // Calculate node coordinates: left-to-right on every row
-    const positions = new Map<string, NodePos>();
-    nodes.forEach((node, idx) => {
-      let r: number, c: number;
-      if (isMobile) {
-        r = idx;
-        c = 0;
-      } else {
-        r = Math.floor(idx / colsPerRow);
-        c = idx % colsPerRow;
-      }
-
-      const x = PAD + c * colStep;
-      // Leave 28px room at top for group label if groups exist
-      const y = PAD + (data.groups && data.groups.length > 0 ? 16 : 0) + r * rowStep;
-      positions.set(node.id, { x, y, row: r, col: c });
-    });
-
-    // Group bounding bands
-    const groupBands: GroupBand[] = [];
-    if (data.groups && data.groups.length > 0) {
-      data.groups.forEach((group) => {
-        const gNodes = nodes.filter((node) => node.group === group.id);
-        if (gNodes.length > 0) {
-          const xs = gNodes.map((node) => positions.get(node.id)!.x);
-          const ys = gNodes.map((node) => positions.get(node.id)!.y);
-          const minX = Math.min(...xs) - 16;
-          const minY = Math.min(...ys) - 30; // 30px above top cards for group label
-          const maxX = Math.max(...xs) + CARD_W + 16;
-          const maxY = Math.max(...ys) + CARD_H + 16;
-          groupBands.push({
-            group,
-            x: minX,
-            y: minY,
-            w: maxX - minX,
-            h: maxY - minY,
-          });
-        }
-      });
-    }
-
-    // Build edge list including cycle return loop if requested
-    const allEdges: DiagramEdge[] = [...data.edges];
-    if (isCycle && nodes.length > 1) {
-      const lastId = nodes[nodes.length - 1].id;
-      const firstId = nodes[0].id;
-      if (!allEdges.some((e) => e.from === lastId && e.to === firstId)) {
-        allEdges.push({ from: lastId, to: firstId, label: 'loop' });
-      }
-    }
-
-    // Compute curved edge paths
-    const calcEdges: CalcEdge[] = [];
-    allEdges.forEach((edge) => {
-      const src = positions.get(edge.from);
-      const tgt = positions.get(edge.to);
-      if (!src || !tgt) return;
-
-      const isCycleBack = isCycle && edge.from === nodes[nodes.length - 1]?.id && edge.to === nodes[0]?.id;
-
-      let sx: number, sy: number, tx: number, ty: number;
-      let path = '';
-      let midX = 0;
-      let midY = 0;
-
-      if (isCycleBack) {
-        // Outer loop returning from last node back to first node
-        sx = src.x + CARD_W / 2;
-        sy = src.y + CARD_H;
-        tx = tgt.x;
-        ty = tgt.y + CARD_H / 2;
-        const loopBottomY = Math.max(src.y, tgt.y) + CARD_H + 40;
-        const loopLeftX = Math.max(8, tgt.x - 24);
-
-        path = `M ${sx} ${sy} C ${sx} ${loopBottomY}, ${loopLeftX} ${loopBottomY}, ${loopLeftX} ${(sy + ty) / 2} C ${loopLeftX} ${ty}, ${loopLeftX} ${ty}, ${tx} ${ty}`;
-        midX = (sx + loopLeftX) / 2;
-        midY = loopBottomY;
-      } else if (src.row === tgt.row) {
-        // Both nodes in the same row: horizontal arrow right
-        sx = src.x + CARD_W;
-        sy = src.y + CARD_H / 2;
-        tx = tgt.x;
-        ty = tgt.y + CARD_H / 2;
-        const dx = tx - sx;
-        const cp1x = sx + dx * 0.5;
-        const cp2x = sx + dx * 0.5;
-        path = `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
-        midX = (sx + tx) / 2;
-        midY = (sy + ty) / 2;
-      } else if (tgt.row > src.row) {
-        if (isMobile || colsPerRow === 1) {
-          // Vertical stack: straight down
-          sx = src.x + CARD_W / 2;
-          sy = src.y + CARD_H;
-          tx = tgt.x + CARD_W / 2;
-          ty = tgt.y;
-          const dy = ty - sy;
-          path = `M ${sx} ${sy} C ${sx} ${sy + dy * 0.5}, ${tx} ${sy + dy * 0.5}, ${tx} ${ty}`;
-          midX = sx;
-          midY = sy + dy * 0.5;
-        } else {
-          // Wrap from end of row down to start of next row: smooth S-curve
-          sx = src.x + CARD_W / 2;
-          sy = src.y + CARD_H;
-          tx = tgt.x + CARD_W / 2;
-          ty = tgt.y;
-          const channelY = (sy + ty) / 2;
-          path = `M ${sx} ${sy} C ${sx} ${channelY + 8}, ${tx} ${channelY - 8}, ${tx} ${ty}`;
-          midX = (sx + tx) / 2;
-          midY = channelY;
-        }
-      } else {
-        // Fallback backward arrow
-        sx = src.x;
-        sy = src.y + CARD_H / 2;
-        tx = tgt.x + CARD_W;
-        ty = tgt.y + CARD_H / 2;
-        const loopY = Math.min(src.y, tgt.y) - 24;
-        path = `M ${sx} ${sy} C ${sx - 30} ${loopY}, ${tx + 30} ${loopY}, ${tx} ${ty}`;
-        midX = (sx + tx) / 2;
-        midY = loopY;
-      }
-
-      calcEdges.push({
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        path,
-        midX,
-        midY,
-        isCycleBack,
-      });
-    });
-
-    // Compute bounding canvas dimensions
-    let maxX = 0;
-    let maxY = 0;
-    positions.forEach((pos) => {
-      maxX = Math.max(maxX, pos.x + CARD_W + PAD);
-      maxY = Math.max(maxY, pos.y + CARD_H + PAD);
-    });
-    groupBands.forEach((gb) => {
-      maxX = Math.max(maxX, gb.x + gb.w + 20);
-      maxY = Math.max(maxY, gb.y + gb.h + 20);
-    });
-    if (isCycle) {
-      maxY += 48; // room for cycle bottom curve
-    }
-
-    return {
-      positions,
-      groupBands,
-      calcEdges,
-      CARD_W,
-      CARD_H,
-      svgW: Math.max(maxX, 320),
-      svgH: Math.max(maxY, 200),
-    };
-  }, [data, isCycle, isTB, containerWidth]);
+  const layout = useMemo(
+    () => computeDiagramLayout(data, containerWidth, isTB),
+    [data, containerWidth, isTB]
+  );
 
   const activeNode = activeIndex >= 0 && activeIndex < data.nodes.length ? data.nodes[activeIndex] : null;
 
@@ -655,7 +812,7 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
           {layout.groupBands.map((gb) => {
             const pal = GROUP_PALETTE[gb.group.color] || GROUP_PALETTE.gray;
             return (
-              <g key={gb.group.id}>
+              <g key={gb.id}>
                 <rect
                   x={gb.x}
                   y={gb.y}
@@ -668,14 +825,16 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
                     stroke: `var(--idiag-group-border-${gb.group.color}, ${pal.darkBorder})`,
                   }}
                 />
-                <text
-                  x={gb.x + 14}
-                  y={gb.y + 18}
-                  className="idiag-group-label"
-                  style={{ fill: `var(--idiag-group-text-${gb.group.color}, ${pal.darkText})` }}
-                >
-                  {gb.group.label.toUpperCase()}
-                </text>
+                {gb.showLabel && (
+                  <text
+                    x={gb.labelX}
+                    y={gb.labelY}
+                    className="idiag-group-label"
+                    style={{ fill: `var(--idiag-group-text-${gb.group.color}, ${pal.darkText})` }}
+                  >
+                    {gb.labelText}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -700,27 +859,6 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
                   className={`idiag-edge${isActive ? ' active' : isDone ? ' done' : ''}`}
                   style={{ color: 'var(--idiag-edge)' }}
                 />
-                {edge.label && (
-                  <g className="idiag-edge-label-pill">
-                    <rect
-                      x={edge.midX - (edge.label.length * 3.4 + 8)}
-                      y={edge.midY - 9}
-                      width={edge.label.length * 6.8 + 16}
-                      height={18}
-                      rx={9}
-                      className="idiag-edge-pill-bg"
-                    />
-                    <text
-                      x={edge.midX}
-                      y={edge.midY + 3.5}
-                      textAnchor="middle"
-                      className="idiag-edge-label-text"
-                      style={{ fill: isActive ? 'var(--idiag-active)' : 'var(--idiag-edge-text)' }}
-                    >
-                      {edge.label}
-                    </text>
-                  </g>
-                )}
               </g>
             );
           })}
@@ -798,6 +936,37 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
                   </button>
                 </div>
               </foreignObject>
+            );
+          })}
+
+          {/* Edge label pills rendered above cards to prevent occlusion */}
+          {layout.calcEdges.map((edge, i) => {
+            if (!edge.label || !edge.displayLabel) return null;
+            const isActive = activeIndex >= 0 && edge.from === activeNode?.id;
+
+            return (
+              <g key={`e-pill-${i}`} className="idiag-edge-label-pill">
+                <rect
+                  x={edge.midX - edge.pillWidth / 2}
+                  y={edge.midY - 9}
+                  width={edge.pillWidth}
+                  height={18}
+                  rx={9}
+                  className="idiag-edge-pill-bg"
+                />
+                <text
+                  x={edge.midX}
+                  y={edge.midY + 3.5}
+                  textAnchor="middle"
+                  className="idiag-edge-label-text"
+                  style={{ fill: isActive ? 'var(--idiag-active)' : 'var(--idiag-edge-text)' }}
+                >
+                  {edge.displayLabel}
+                </text>
+                {edge.label !== edge.displayLabel && (
+                  <title>{edge.label}</title>
+                )}
+              </g>
             );
           })}
         </svg>

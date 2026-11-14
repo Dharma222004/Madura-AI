@@ -29,3 +29,4 @@ describe('formatMarkdownContent - Currency dollar escaping for LaTeX preservatio
     expect(formatMarkdownContent('Check `$500` inline code')).toBe('Check `$500` inline code');
   });
 });
+

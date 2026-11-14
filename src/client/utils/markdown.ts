@@ -26,3 +26,4 @@ export function formatMarkdownContent(text: string): string {
     })
     .join('');
 }
+
