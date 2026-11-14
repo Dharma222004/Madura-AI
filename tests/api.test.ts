@@ -7,6 +7,7 @@ import { NvidiaProvider } from '../src/server/providers/nvidia.provider.js';
 import { MockProvider } from '../src/server/providers/mock.provider.js';
 import { DocumentService } from '../src/server/services/document.service.js';
 import { ChatService } from '../src/server/services/chat.service.js';
+import { SearchService } from '../src/server/services/search.service.js';
 
 describe('Madura AI API Endpoints', () => {
   const testDir = './data-api-test';
@@ -19,7 +20,7 @@ describe('Madura AI API Endpoints', () => {
     const nvidiaProvider = new NvidiaProvider('test-key');
     const mockProvider = new MockProvider();
     const documentService = new DocumentService(25);
-    const chatService = new ChatService(storage, nvidiaProvider, mockProvider, true);
+    const chatService = new ChatService(storage, nvidiaProvider, mockProvider, new SearchService(), true);
 
     app = createApp({
       storage,
@@ -121,5 +122,15 @@ describe('Madura AI API Endpoints', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(res.headers['x-xss-protection']).toBe('1; mode=block');
+  });
+
+  it('does not replace real-world company name NVIDIA with Madura AI in responses', async () => {
+    const chatService = new ChatService(storage, new MockProvider(), new MockProvider(), new SearchService(), true);
+    const { assistantMessage } = await chatService.handleUserMessage({
+      messageContent: 'Tell me about NVIDIA GPUs and Jensen Huang',
+      model: 'mistral-large-4',
+    });
+    expect(assistantMessage.content).not.toContain('CEO of Madura AI');
+    expect(assistantMessage.content).not.toContain('Madura AI GPUs');
   });
 });

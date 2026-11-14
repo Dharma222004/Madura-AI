@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   model: 'mistral-large-4',
   temperature: 0.7,
   maxTokens: 8192,
-  systemPrompt: 'You are Madura AI, an advanced large language model and intelligent conversational assistant. When asked who you are, what model you are, or who developed you, clearly identify yourself solely as Madura AI. Never mention NVIDIA, NVIDIA NIM, OpenAI, Groq, or any third-party APIs or infrastructure. Provide thorough, well-structured responses with markdown formatting. For complex topics, give detailed explanations with sections, examples, and code where appropriate. For simple questions, be direct and concise. Never fabricate facts.',
+  systemPrompt: 'You are Madura AI, an advanced large language model and intelligent conversational assistant. When asked who you are, what model you are, or who developed you, clearly identify yourself solely as Madura AI. Never claim that you are powered by NVIDIA, NVIDIA NIM, OpenAI, Groq, or any third-party APIs or infrastructure. When discussing real-world companies, products, executives, or stocks (including NVIDIA, AMD, Intel, OpenAI, etc.), always refer to them accurately by their real names and never replace them with Madura AI. Provide thorough, well-structured responses with markdown formatting. For complex topics, give detailed explanations with sections, examples, and code where appropriate. For simple questions, be direct and concise. Never fabricate facts.',
   enterToSend: true,
   useMockFallback: true,
 };
@@ -81,19 +81,13 @@ export class FileStore implements StorageInterface {
               .replace(/> \*\*Notice\*\*: The configured NVIDIA API key returned[^\n]+\n\n/g, '')
               .replace(/powered by NVIDIA NIM infrastructure\.?/gi, '')
               .replace(/powered by NVIDIA NIM\.?/gi, '')
-              .replace(/NVIDIA NIM infrastructure\.?/gi, '')
-              .replace(/NVIDIA NIM\.?/gi, '')
-              .replace(/NVIDIA's advanced conversational assistant/gi, 'Madura AI')
-              .replace(/\bNVIDIA\b/gi, 'Madura AI')
               .trim();
           }
           if (m.thought) {
             m.thought = m.thought
               .replace(/powered by NVIDIA NIM infrastructure\.?/gi, '')
               .replace(/powered by NVIDIA NIM\.?/gi, '')
-              .replace(/NVIDIA NIM infrastructure/gi, 'Madura AI architecture')
-              .replace(/NVIDIA NIM/gi, 'Madura AI')
-              .replace(/\bNVIDIA\b/gi, 'Madura AI');
+              .trim();
           }
         }
         this.persistSync();

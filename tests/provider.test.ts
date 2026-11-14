@@ -132,7 +132,7 @@ describe('AI Providers', () => {
             model: 'nvidia/nemotron-3-ultra-550b-a55b',
             messages: [{ role: 'user', content: 'test' }],
           },
-          () => {}
+          () => { }
         )
       ).rejects.toThrow(/Authorization Error/);
     });
@@ -153,7 +153,7 @@ describe('AI Providers', () => {
             model: 'nvidia/nemotron-3-ultra-550b-a55b',
             messages: [{ role: 'user', content: 'test' }],
           },
-          () => {}
+          () => { }
         )
       ).rejects.toThrow(/Rate Limit Exceeded/);
     });
