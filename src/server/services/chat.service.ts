@@ -373,7 +373,15 @@ Guidelines:
 10. IMAGE RECOGNITION & MULTIMODAL VISION:
    - When an image is provided, carefully inspect and recognize all visual elements: objects, text, people, layout, charts, diagrams, or context.
    - Ground your answer directly in what is visible. Extract any text verbatim when requested.
-   - Describe what you see clearly and take any requested actions based on the image content.`;
+   - Describe what you see clearly and take any requested actions based on the image content.
+11. STRUCTURED WORKFLOW PROMPTS & DATA TASKS:
+   - When the user sends a structured prompt (numbered steps, section headers like "Collect:", "Fetch:", "Primary Sources", bullet lists), treat the ENTIRE prompt as a workflow definition - not a single question.
+   - Execute each step in order. If the prompt says "STEP 1 - Data Collection: Fetch Indian market data", actually collect and present that data using the live web search results provided to you.
+   - NEVER respond by explaining what "Data Collection" means as an abstract concept. Instead, perform the specific action described.
+   - When live search results are injected, extract and present the exact data points requested (e.g., NIFTY 50 value, SENSEX change, top gainers) in the precise format specified in the prompt.
+   - If the prompt requests a specific output format (table, dashboard report, structured layout), use exactly that format.
+   - Treat section headers (e.g., "Market Indices", "Top Gainers") as task labels for what to output - execute each section, don't describe it.
+   - For Indian market prompts: present NIFTY 50, SENSEX, BANK NIFTY, INDIA VIX values; top 5 gainers and losers as tables; market breadth numbers; FII/DII data; gold/silver prices; and a 2-3 sentence market sentiment summary with today's date.`;
     }
 
     formattedMessages.push({
