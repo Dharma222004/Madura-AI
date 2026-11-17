@@ -34,3 +34,13 @@ Thumbs.db
 .agents/
 skills-lock.json
 
+# Mobile & Android artifacts
+*.apk
+*.aab
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+
+

@@ -12,10 +12,16 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:client && npm run build:server",
     "lint": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "mobile:sync": "npx cap sync android",
+    "mobile:build": "npm run build:client && npx cap sync android && cd android && gradlew assembleDebug && cd ..",
     "start": "node dist/server/index.js",
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/splash-screen": "^8.0.2",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.7",
@@ -39,6 +45,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",

@@ -3,6 +3,7 @@ import {
   ArrowUp,
   Square,
   Paperclip,
+  Camera,
   X,
   FileText,
   FileSpreadsheet,
@@ -18,6 +19,7 @@ import {
 import { Attachment, ModelInfo } from '../../types/index.js';
 import * as api from '../services/api.js';
 import { ModelSelector } from './ModelSelector.js';
+import { CameraModal } from './CameraModal.js';
 import {
   MAX_FILES,
   validateFileBatch,
@@ -75,6 +77,9 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+
+  // Live Camera capture state
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -413,6 +418,15 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   };
 
+  /**
+   * Receives captured camera photo File object(s) and routes them
+   * directly through the standard file validation and processing pipeline.
+   */
+  const handleCameraPhotosCaptured = async (files: File[]) => {
+    if (files.length === 0) return;
+    await handleFilesSelected(files);
+  };
+
   const handleRemoveFile = (id: string) => {
     const ctrl = fileAbortControllersRef.current.get(id);
     if (ctrl) {
@@ -721,22 +735,36 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               accept="image/*,.heic,.heif,.pdf,.docx,.xlsx,.xls,.csv,.pptx,.txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.rb,.php,.html,.htm,.css,.scss,.sql,.sh,.yaml,.yml,.xml,.ini,.toml,.log"
             />
 
-            {/* Left Paperclip Attachment Button */}
-            <button
-              type="button"
-              className="composer-plus-btn"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach files or images (up to 20 files, 20 MB each)"
-              aria-label="Attach files"
-              data-testid="attach-file-btn"
-              disabled={isRecording || isTranscribing}
-            >
-              {isAnyFileProcessing ? (
-                <Loader2 size={18} className="spin-animation" />
-              ) : (
-                <Paperclip size={18} />
-              )}
-            </button>
+            {/* Left Controls: File Attachment & Live Camera */}
+            <div className="composer-left-tools">
+              <button
+                type="button"
+                className="composer-plus-btn"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files or images (up to 20 files, 20 MB each)"
+                aria-label="Attach files"
+                data-testid="attach-file-btn"
+                disabled={isRecording || isTranscribing}
+              >
+                {isAnyFileProcessing ? (
+                  <Loader2 size={18} className="spin-animation" />
+                ) : (
+                  <Paperclip size={18} />
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="composer-camera-btn"
+                onClick={() => setIsCameraOpen(true)}
+                title="Use Camera to capture photo"
+                aria-label="Use Camera"
+                data-testid="use-camera-btn"
+                disabled={isRecording || isTranscribing}
+              >
+                <Camera size={18} />
+              </button>
+            </div>
 
             {/* Main Textarea */}
             <textarea
@@ -831,6 +859,15 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Multi-Image Live Camera Modal */}
+      <CameraModal
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapturePhotos={handleCameraPhotosCaptured}
+        existingAttachmentCount={attachments.length}
+        maxFilesAllowed={MAX_FILES}
+      />
     </div>
   );
 };
