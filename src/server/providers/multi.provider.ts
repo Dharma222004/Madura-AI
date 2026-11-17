@@ -2,8 +2,8 @@
  * Madura AI — Multi-Provider Gateway
  *
  * Routes each model ID to the correct API key, base URL, and real model name.
- * Default model: Mistral Large 4 via NVIDIA NIM (first model in registry).
- * Supports Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Nvidia Ultron.
+ * Default model: Gemini 2.5 Flash (first model in registry).
+ * Supports Gemini 2.5 Flash, Qwen 3.8, GPT-OSS-120B, and Nemotron-3 Ultra.
  */
 
 import { AIProvider, ChatCompletionOptions, StreamChatResult } from './provider.interface.js';
@@ -263,21 +263,7 @@ export function buildModelRegistry(): ModelConfig[] {
   );
 
   return [
-    // 1. Mistral Large 4 — NVIDIA NIM
-    {
-      id: 'mistral-large-4',
-      displayName: 'Mistral Large 4',
-      realModel: process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL,
-      baseUrl: nvidiaBase,
-      apiKey: nvidiaKeys[0] || '',
-      apiKeys: nvidiaKeys,
-      providerName: 'nvidia',
-      description: 'Mistral Large 4',
-      contextWindow: 128000,
-      supportsVision: false,
-      crossProviderFallbackId: 'gemini-flash',
-    },
-    // 2. Gemini 2.5 Flash — Google Generative Language
+    // 1. Gemini 2.5 Flash — Google Generative Language
     {
       id: 'gemini-flash',
       displayName: 'Gemini 2.5 Flash',
@@ -289,9 +275,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Fast multimodal model',
       contextWindow: 1000000,
       supportsVision: true,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'qwen-3.8',
     },
-    // 3. Qwen 3.8 — Groq Qwen 3.8
+    // 2. Qwen 3.8 — Groq Qwen 3.8
     {
       id: 'qwen-3.8',
       displayName: 'Qwen 3.8',
@@ -305,7 +291,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'gemini-flash',
     },
-    // 4. GPT-OSS-120B — Groq GPT-OSS-120B
+    // 3. GPT-OSS-120B — Groq GPT-OSS-120B
     {
       id: 'gpt-oss-120b',
       displayName: 'GPT-OSS-120B',
@@ -319,11 +305,11 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'nvidia-ultron',
     },
-    // 5. Nemotron-3 Ultra — NVIDIA NIM Nemotron Ultra 550B
+    // 4. Nemotron-3 Ultra — NVIDIA NIM Nemotron Ultra 550B
     {
       id: 'nvidia-ultron',
       displayName: 'Nemotron-3 Ultra',
-      realModel: 'nvidia/nemotron-3-ultra-550b-a55b',
+      realModel: process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL,
       baseUrl: nvidiaBase,
       apiKey: nvidiaKeys[0] || '',
       apiKeys: nvidiaKeys,
@@ -334,7 +320,7 @@ export function buildModelRegistry(): ModelConfig[] {
       isReasoning: true,
       crossProviderFallbackId: 'gpt-oss-120b',
     },
-    // 6. Nemotron 3.5 Lightning — NVIDIA NIM
+    // 5. Nemotron 3.5 Lightning — NVIDIA NIM
     {
       id: 'nemotron-lightning',
       displayName: 'Nemotron 3.5 Lightning',
@@ -347,7 +333,7 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
     // 6. Nemotron Omni — NVIDIA NIM Image Recognition & Multimodal Reasoning
     {
@@ -377,39 +363,9 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 8. Deepseek-v4 Flash — NVIDIA NIM (outputs <think> reasoning tags)
-    {
-      id: 'deepseek-v4.1-flash',
-      displayName: 'Deepseek-v4 Flash',
-      realModel: 'deepseek-ai/deepseek-v4.1-flash',
-      baseUrl: nvidiaBase,
-      apiKey: nvidiaKeys[0] || '',
-      apiKeys: nvidiaKeys,
-      providerName: 'nvidia',
-      description: 'DeepSeek V4.1 Flash model',
-      contextWindow: 128000,
-      supportsVision: false,
-      isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
-    },
-    // 9. GLM 5.3 Flash — NVIDIA NIM (outputs <think> reasoning tags — must be treated as reasoning)
-    {
-      id: 'glm-5.3-flash',
-      displayName: 'GLM 5.3 Flash',
-      realModel: 'z-ai/glm-5.3-flash',
-      baseUrl: nvidiaBase,
-      apiKey: nvidiaKeys[0] || '',
-      apiKeys: nvidiaKeys,
-      providerName: 'nvidia',
-      description: 'GLM 5.3 Flash model',
-      contextWindow: 128000,
-      supportsVision: false,
-      isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
-    },
-    // 10. Muse-Glimmer-30B — NVIDIA NIM
+    // 8. Muse-Glimmer-30B — NVIDIA NIM
     {
       id: 'muse-glimmer-30b',
       displayName: 'Muse-Glimmer-30B',
@@ -421,10 +377,10 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Meta Muse Glimmer 30B model',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
     // ── OpenRouter Models ──────────────────────────────────────────────────────
-    // 6. Nemotron 3.5 Super — OpenRouter (free)
+    // 9. Nemotron 3.5 Super — OpenRouter (free)
     {
       id: 'nemotron-3.5-super',
       displayName: 'Nemotron 3.5 Super',
@@ -438,7 +394,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: true,
       crossProviderFallbackId: 'gemini-flash',
     },
-    // 7. Gemma-4 26B — OpenRouter (free)
+    // 10. Gemma-4 26B — OpenRouter (free)
     {
       id: 'gemma-4',
       displayName: 'Gemma-4',
@@ -452,7 +408,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'gemini-flash',
     },
-    // 8. Recursive Flint — OpenRouter (free)
+    // 11. Recursive Flint — OpenRouter (free)
     {
       id: 'recursive',
       displayName: 'Recursive',
@@ -464,23 +420,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Recursive Flint model',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 9. Xingchen — OpenRouter (free)
-    {
-      id: 'xingchen',
-      displayName: 'Xingchen',
-      realModel: 'xingchen-agi/xing4.0-29b-a4b:free',
-      baseUrl: openrouterBase,
-      apiKey: openrouterKeys[0] || '',
-      apiKeys: openrouterKeys,
-      providerName: 'openrouter',
-      description: 'Xingchen AGI 29B model',
-      contextWindow: 128000,
-      supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
-    },
-    // 10. Gemma-4 31B — OpenRouter (free)
+    // 12. Gemma-4 31B — OpenRouter (free)
     {
       id: 'gemma-4-31b',
       displayName: 'Gemma -4 31B',
@@ -495,7 +437,7 @@ export function buildModelRegistry(): ModelConfig[] {
       crossProviderFallbackId: 'gemini-flash',
     },
     // ── Oxlo Models ───────────────────────────────────────────────────────────
-    // 11. Deepseek V3.2 — Oxlo (Flagship 671B MoE)
+    // 13. Deepseek V3.2 — Oxlo (Flagship 671B MoE)
     {
       id: 'deepseek-v3.2',
       displayName: 'DeepSeek V3.2 (Oxlo)',
@@ -509,7 +451,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'cf-qwen3.8-27b',
     },
-    // 12. Mistral 7B — Oxlo
+    // 14. Mistral 7B — Oxlo
     {
       id: 'mistral-7b',
       displayName: 'Mistral 7B (Oxlo)',
@@ -521,9 +463,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Mistral 7B on Oxlo API',
       contextWindow: 32000,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 13. Llama 3.2 3B — Oxlo
+    // 15. Llama 3.2 3B — Oxlo
     {
       id: 'llama-3.2-3b',
       displayName: 'Llama 3.2 3B (Oxlo)',
@@ -535,9 +477,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Llama 3.2 3B on Oxlo API',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 14. Stable Diffusion 1.5 — Oxlo (image generation)
+    // 16. Stable Diffusion 1.5 — Oxlo (image generation)
     {
       id: 'stable-diffusion-1.5',
       displayName: 'Stable Image Creation',
@@ -549,10 +491,10 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'AI image generation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
     // ── Cloudflare Workers AI Models ──────────────────────────────────────────
-    // 15. Qwen 3.8 27B — Cloudflare Workers AI
+    // 17. Qwen 3.8 27B — Cloudflare Workers AI
     {
       id: 'cf-qwen3.8-27b',
       displayName: 'Qwen 3.8 27B (CF)',
@@ -566,7 +508,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'qwen-3.8',
     },
-    // 16. Gemma-4 26B — Cloudflare Workers AI
+    // 18. Gemma-4 26B — Cloudflare Workers AI
     {
       id: 'cf-gemma-4-26b',
       displayName: 'Gemma-4 26B (CF)',
@@ -580,7 +522,7 @@ export function buildModelRegistry(): ModelConfig[] {
       supportsVision: false,
       crossProviderFallbackId: 'gemma-4',
     },
-    // 17. Nemotron-3 120B — Cloudflare Workers AI
+    // 19. Nemotron-3 120B — Cloudflare Workers AI
     {
       id: 'cf-nemotron-3-120b',
       displayName: 'Nemotron-3 120B (CF)',
@@ -593,9 +535,9 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 18. GLM 4.7 Flash — Cloudflare Workers AI
+    // 20. GLM 4.7 Flash — Cloudflare Workers AI
     {
       id: 'cf-glm-4.7-flash',
       displayName: 'GLM 4.7 Flash',
@@ -608,9 +550,9 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'glm-5.3-flash',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 19. GPT 120B — Cloudflare Workers AI
+    // 21. GPT 120B — Cloudflare Workers AI
     {
       id: 'cf-gpt-120b',
       displayName: 'GPT 120B',
@@ -625,7 +567,7 @@ export function buildModelRegistry(): ModelConfig[] {
       isReasoning: true,
       crossProviderFallbackId: 'gpt-oss-120b',
     },
-    // 20. GPT-OSS 20B — Cloudflare Workers AI
+    // 22. GPT-OSS 20B — Cloudflare Workers AI
     {
       id: 'cf-gpt-oss-20b',
       displayName: 'GPT-OSS 20B',
@@ -638,9 +580,9 @@ export function buildModelRegistry(): ModelConfig[] {
       contextWindow: 128000,
       supportsVision: false,
       isReasoning: true,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 21. Qwen3 30B FP8 — Cloudflare Workers AI
+    // 23. Qwen3 30B FP8 — Cloudflare Workers AI
     {
       id: 'cf-qwen3-30b-fp8',
       displayName: 'Qwen3 30B FP8',
@@ -652,9 +594,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Qwen3 30B FP8 on Cloudflare Workers AI',
       contextWindow: 128000,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 22. Flux-2 Klein 4B — Cloudflare Workers AI (Image Creation)
+    // 24. Flux-2 Klein 4B — Cloudflare Workers AI (Image Creation)
     {
       id: 'cf-flux-2-klein-4b',
       displayName: 'Flux-2 Klein 4B',
@@ -666,9 +608,9 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Black Forest Labs Flux-2 Klein 4B image creation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
-    // 23. Flux-2 Klein 9B — Cloudflare Workers AI (Image Creation)
+    // 25. Flux-2 Klein 9B — Cloudflare Workers AI (Image Creation)
     {
       id: 'cf-flux-2-klein-9b',
       displayName: 'Flux-2 Klein 9B',
@@ -680,7 +622,7 @@ export function buildModelRegistry(): ModelConfig[] {
       description: 'Black Forest Labs Flux-2 Klein 9B image creation',
       contextWindow: 1024,
       supportsVision: false,
-      crossProviderFallbackId: 'mistral-large-4',
+      crossProviderFallbackId: 'gemini-flash',
     },
   ];
 }
@@ -822,21 +764,19 @@ export class MultiModelProvider implements AIProvider {
       'cf-flux-2-klein-9b',
     ]);
 
-    return this.registry
-      .filter((m) => {
-        // Exclude image-only models from chat model selector
-        if (IMAGE_ONLY_IDS.has(m.id)) return false;
-        // Exclude models with no API key (provider not configured)
-        if (!m.apiKey && (!m.apiKeys || m.apiKeys.length === 0 || !m.apiKeys[0])) return false;
-        return true;
-      })
-      .map((m) => ({
-        id: m.id,
-        name: m.displayName,
-        description: m.description,
-        contextWindow: m.contextWindow,
-        supportsVision: m.supportsVision,
-      }));
+    const chatModels = this.registry.filter((m) => !IMAGE_ONLY_IDS.has(m.id));
+    const configured = chatModels.filter(
+      (m) => Boolean(m.apiKey || (m.apiKeys && m.apiKeys.length > 0 && m.apiKeys[0]))
+    );
+    const list = configured.length > 0 ? configured : chatModels;
+
+    return list.map((m) => ({
+      id: m.id,
+      name: m.displayName,
+      description: m.description,
+      contextWindow: m.contextWindow,
+      supportsVision: m.supportsVision,
+    }));
   }
 
   private stripThinkTags(text: string): string {
@@ -947,7 +887,6 @@ export class MultiModelProvider implements AIProvider {
         modelToSend.includes('gpt-oss') ||
         modelToSend.includes('nemotron') ||
         modelToSend.includes('deepseek-r1') ||
-        modelToSend.includes('deepseek-v4') ||
         modelToSend.includes('glm');
 
       let payload: Record<string, any>;

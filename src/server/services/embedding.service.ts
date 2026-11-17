@@ -128,7 +128,8 @@ export class EmbeddingService {
     // 2. Cloudflare Plamo Embedding fallback (@cf/pfnet/plamo-embedding-1b)
     // Automatically invoked if NVIDIA embedding keys fail or are exhausted
     const hasMockKey = this.apiKeys.some((k) => k.includes('mock'));
-    if (process.env.NODE_ENV !== 'test' && !hasMockKey) {
+    const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+    if (!isTest && !hasMockKey) {
       const cfKey = process.env.CLOUDFLARE_API_KEY || '';
       const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
       if (cfKey && cfAccountId) {

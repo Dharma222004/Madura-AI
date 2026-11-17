@@ -19,7 +19,8 @@ export class ImageService {
   private cfAccountId: string;
 
   constructor(_apiKeyOrKeys?: string | string[], _baseUrl?: string) {
-    this.cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || (process.env.NODE_ENV === 'test' ? 'cf-test-account' : '');
+    const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+    this.cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID || (isTest ? 'cf-test-account' : '');
   }
 
   /**
@@ -118,8 +119,9 @@ export class ImageService {
       }
 
       // Check cooldown (skip models that failed recently, unless in test environment)
+      const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
       const cooldownUntil = this.modelCooldowns.get(entry.id);
-      if (process.env.NODE_ENV !== 'test' && cooldownUntil && cooldownUntil > Date.now()) {
+      if (!isTest && cooldownUntil && cooldownUntil > Date.now()) {
         console.log(`[ImageService] Skipping ${entry.id} (cooling down for ${Math.round((cooldownUntil - Date.now()) / 1000)}s)`);
         continue;
       }
@@ -194,7 +196,8 @@ export class ImageService {
     enhancedPrompt: string,
     seed: number
   ): Promise<string | null> {
-    const timeoutMs = process.env.NODE_ENV === 'test' ? 3000 : 45000;
+    const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+    const timeoutMs = isTest ? 3000 : 45000;
 
     // A. Cloudflare Workers AI
     if (entry.provider === 'cloudflare') {

@@ -11,6 +11,7 @@ import {
   Home,
   Compass,
   BookOpen,
+  Brain,
 } from 'lucide-react';
 import { Conversation } from '../../types/index.js';
 import { GroupedConversations } from '../hooks/useConversations.js';
@@ -153,6 +154,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button className="sidebar-nav-item" onClick={onOpenSettings}>
           <BookOpen size={16} />
           <span>Library</span>
+        </button>
+        <button
+          className="sidebar-nav-item"
+          onClick={onOpenSettings}
+          data-testid="sidebar-memory-btn"
+          aria-label="Memory"
+        >
+          <Brain size={16} />
+          <span>Memory</span>
         </button>
       </nav>
 

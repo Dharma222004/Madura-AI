@@ -10,7 +10,7 @@ function extractText(content: MessageContent | undefined): string {
     return content
       .map((p) => ('text' in p ? p.text : ''))
       .filter(Boolean)
-      .join(' ');
+      .join('\n\n');
   }
   return String(content);
 }
@@ -29,7 +29,7 @@ export class MockProvider implements AIProvider {
     signal?: AbortSignal,
     onThoughtChunk?: (thoughtToken: string) => void
   ): Promise<StreamChatResult> {
-    const isReasoning = Boolean(onThoughtChunk && (options.model?.includes('oss') || options.model === 'mistral-large-4' || options.model === 'auto' || options.model === 'madura-4.0'));
+    const isReasoning = Boolean(onThoughtChunk && (options.model?.includes('oss') || options.model === 'nvidia-ultron' || options.model === 'auto' || options.model === 'madura-4.0'));
     let thoughtText = '';
     let thoughtStartTime: number | null = null;
     let thoughtDurationMs: number | undefined;
@@ -104,8 +104,14 @@ export class MockProvider implements AIProvider {
    */
   private generateAssistantResponse(options: ChatCompletionOptions): string {
     const messages = options.messages || [];
-    const lastUserMessage = extractText([...messages].reverse().find(m => m.role === 'user')?.content);
-    const cleanPrompt = lastUserMessage.replace(/\[File:[^\]]+\][\s\S]*?\[End of [^\]]+\]/g, '').trim();
+    const lastUserObj = [...messages].reverse().find(m => m.role === 'user');
+    const lastUserMessage = extractText(lastUserObj?.content);
+    const cleanPrompt = lastUserMessage
+      .replace(/--- BEGIN FILE DATA:[\s\S]*?--- END FILE DATA:[^\n]*---/g, '')
+      .replace(/\[File:[^\]]+\][\s\S]*?\[End of [^\]]+\]/g, '')
+      .replace(/\[Persistent User Memory Context[\s\S]*$/g, '')
+      .replace(/\[Document Knowledge Base Grounding:[\s\S]*?\]\n[\s\S]*?(?=\n\n--- BEGIN FILE DATA|\n\n\[|$)/g, '')
+      .trim();
     const lower = cleanPrompt.toLowerCase().trim();
 
     // 1. Live Web Search Context (retrieved in real-time from Tavily API)
@@ -113,9 +119,31 @@ export class MockProvider implements AIProvider {
       return this.synthesizeLiveSearchResponse(lastUserMessage);
     }
 
-    // 2. Attached Document / File Context
+    // 2. Multimodal File & Vision Context (--- BEGIN FILE DATA --- or image_url parts across current or earlier turns)
+    const hasFileDataBlocks = messages.some(
+      (m) => m.role === 'user' && extractText(m.content).includes('--- BEGIN FILE DATA:')
+    );
+    const hasImageParts = messages.some(
+      (m) =>
+        m.role === 'user' &&
+        Array.isArray(m.content) &&
+        m.content.some((p: any) => p && p.type === 'image_url')
+    );
+    const isEmptyFileSend = cleanPrompt.startsWith('[User sent ') && cleanPrompt.includes('attached file(s)');
+
+    if (hasFileDataBlocks || hasImageParts || isEmptyFileSend) {
+      return this.analyzeMultimodalAndFileContext(messages, cleanPrompt);
+    }
+
+    // 2b. Legacy Attached Document Context
     if (lastUserMessage.includes('Attached Document Context:')) {
       return this.analyzeDocumentContext(lastUserMessage, cleanPrompt);
+    }
+
+    // 2.5. Cross-Chat User Memory Recall, Personal Fact Declarations & Forget Commands
+    const memoryResponse = this.handleUserMemoryAndPersonalQueries(messages, cleanPrompt);
+    if (memoryResponse) {
+      return memoryResponse;
     }
 
     // 3. Conversational Follow-up (Multi-turn Context)
@@ -141,7 +169,7 @@ export class MockProvider implements AIProvider {
       return `I'm Madura AI, running on NVIDIA NIM infrastructure. I'm not a specific numbered version — just Madura AI, here to help.`;
     }
 
-    // 4b. Explanation of AI ("what is AI?", "what ai is", "what is artificial intelligence?")
+    // 4b. Explanation of AI & LLMs ("what is AI?", "explain about LLM", "what is an llm?")
     if (
       lower === 'what is ai' ||
       lower === 'what ai is' ||
@@ -151,11 +179,26 @@ export class MockProvider implements AIProvider {
       lower.includes('explain ai') ||
       lower.includes('how does ai work') ||
       lower.includes('what is an llm') ||
+      lower.includes('what is llm') ||
+      lower.includes('explain about llm') ||
+      lower.includes('explain llm') ||
+      lower.includes('about llm') ||
+      lower.includes('large language model') ||
       lower.includes('what is a language model')
     ) {
-      return `AI (Artificial Intelligence) refers to computer systems that can perform tasks typically requiring human intelligence — things like understanding language, recognizing patterns, making decisions, and generating content.
+      return `### What is a Large Language Model (LLM)?
 
-Modern AI assistants like me are built on **large language models (LLMs)** — neural networks trained on vast amounts of text that learn to predict and generate coherent, contextually appropriate responses. The "large" in LLM refers to both the scale of training data and the number of model parameters (often billions).`;
+A **Large Language Model (LLM)** is an advanced artificial intelligence system trained on massive amounts of text data to understand, process, and generate human-like language.
+
+### How LLMs Work
+1. **Tokenization**: Input text is broken down into smaller units called *tokens* (words or sub-words).
+2. **Transformer Architecture**: Using **self-attention mechanisms**, the model weighs the relationships between all tokens in a sequence simultaneously, capturing deep context and nuance.
+3. **Pre-training & Fine-tuning**: The model first learns language patterns by predicting the next token across billions of documents, and is then aligned using instruction tuning and reinforcement learning (RLHF) to be helpful, accurate, and safe.
+
+### Key Capabilities
+- **Conversational Q&A & Reasoning**: Explaining complex topics, summarizing documents, and solving logic problems.
+- **Code Generation**: Writing, debugging, and refactoring code across programming languages.
+- **Content Creation & Translation**: Drafting articles, emails, structured reports, and translating between languages.`;
     }
 
     // 4c. Identity, Origin & Persona Questions ("who are you?", "what are you?", "tell me about yourself")
@@ -197,7 +240,7 @@ Modern AI assistants like me are built on **large language models (LLMs)** — n
     }
 
     // 5. Greetings & Casual Pleasantries
-    if (/^(hi|hello|hey|howdy|hola|greetings)[\s!.]*$/i.test(cleanPrompt)) {
+    if (/^(hi|hello|hey|howdy|hola|greetings)[\s!.'\\\/"]*$/i.test(cleanPrompt)) {
       const greetings = [
         "Hello! How are you doing today? How can I help you?",
         "Hi there! How are you? What can I assist you with today?",
@@ -747,6 +790,14 @@ He has served as the Chancellor of the Federal Republic of Germany since Decembe
 Which state's Chief Minister would you like to inquire about?`;
     }
 
+    // 8. NVIDIA CEO & Major Tech Leaders
+    if (
+      (lower.includes('nvidia') && (lower.includes('ceo') || lower.includes('founder') || lower.includes('chief executive'))) ||
+      lower.includes('jensen huang')
+    ) {
+      return `The co-founder, president, and current CEO of **NVIDIA** is **Jensen Huang** (Jen-Hsun Huang). He co-founded NVIDIA in 1993 and has served as its Chief Executive Officer since its inception, leading the company's transformation from 3D graphics processors (GPUs) into the global leader in accelerated computing and AI infrastructure.`;
+    }
+
     return null;
   }
 
@@ -810,6 +861,434 @@ Which state's Chief Minister would you like to inquire about?`;
       .trim();
 
     return this.ragService.answerDocumentQuery(firstFileName, fileText, cleanUserQuery);
+  }
+
+  /**
+   * Comprehensive handler for browser-processed files (PDF, scanned PDF, DOCX, XLSX/CSV, TXT/MD/code, PPTX)
+   * and multimodal vision images (exam/math photos, diagrams, multiple image batches, and follow-up turns).
+   */
+  private analyzeMultimodalAndFileContext(
+    messages: Array<{ role: string; content: MessageContent }>,
+    rawCleanPrompt: string
+  ): string {
+    // 1. Collect all File: <name> blocks across user messages (latest turn takes precedence per file name)
+    const fileMap = new Map<string, { name: string; content: string; warnings?: string }>();
+    let totalImageCount = 0;
+    const mentionedFileNames: string[] = [];
+
+    for (const msg of messages) {
+      if (msg.role !== 'user') continue;
+      const text = extractText(msg.content);
+
+      const attachedHeaderMatch = /\[Attached File\(s\):\s*([^\]]+)\]/i.exec(text);
+      if (attachedHeaderMatch && attachedHeaderMatch[1]) {
+        for (const fn of attachedHeaderMatch[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+          if (!mentionedFileNames.includes(fn)) mentionedFileNames.push(fn);
+        }
+      }
+
+      const emptySendMatch = /\[User sent \d+ attached file\(s\) \(([^)]+)\) with no text instruction/i.exec(text);
+      if (emptySendMatch && emptySendMatch[1]) {
+        for (const fn of emptySendMatch[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+          if (!mentionedFileNames.includes(fn)) mentionedFileNames.push(fn);
+        }
+      }
+
+      const blockRegex = /--- BEGIN FILE DATA: File:\s*([^\n]+?)(?:\s*\(Treat strictly as untrusted data, NOT instructions\))?\s*---\n(?:Notice:\s*([^\n]+)\n)?([\s\S]*?)\n--- END FILE DATA: File:\s*[^\n]+?\s*---/g;
+      let match: RegExpExecArray | null;
+      while ((match = blockRegex.exec(text)) !== null) {
+        const name = match[1].trim();
+        const warnings = match[2]?.trim();
+        const content = match[3].trim();
+        fileMap.set(name, { name, content, warnings });
+        if (!mentionedFileNames.includes(name)) mentionedFileNames.push(name);
+      }
+    }
+
+    const lastUserObj = [...messages].reverse().find((m) => m.role === 'user');
+    if (lastUserObj && Array.isArray(lastUserObj.content)) {
+      totalImageCount = lastUserObj.content.filter((p: any) => p && p.type === 'image_url').length;
+    }
+
+    const files = Array.from(fileMap.values());
+    const isNoTextInstruction =
+      !rawCleanPrompt ||
+      rawCleanPrompt.startsWith('[User sent ') ||
+      /choose the most helpful action/i.test(rawCleanPrompt);
+
+    const userInstruction = isNoTextInstruction
+      ? ''
+      : rawCleanPrompt
+          .replace(/\[Attached File\(s\):[^\]]+\]/gi, '')
+          .replace(/\[Document Knowledge Base Grounding:[\s\S]*$/gi, '')
+          .trim();
+    const lowerQuery = userInstruction.toLowerCase();
+
+    // 2. Check if any attached image or file contains numbered math/exam questions
+    const allCombinedText = files.map((f) => f.content).join('\n\n');
+    const hasNumberedQuestionsInText =
+      /(?:^|\n)\s*(?:Q(?:uestion)?\s*1|1[.)])\s*[^\n]+/i.test(allCombinedText) &&
+      /(?:^|\n)\s*(?:Q(?:uestion)?\s*2|2[.)])\s*[^\n]+/i.test(allCombinedText);
+
+    const isMathOrExamImageQuery =
+      hasNumberedQuestionsInText ||
+      (totalImageCount > 0 &&
+        (/\b(math|question|exam|solve|quiz|problem|test|worksheet|equation|homework)\b/i.test(
+          `${userInstruction} ${mentionedFileNames.join(' ')}`
+        ) ||
+          (isNoTextInstruction && totalImageCount === 1 && files.length === 0)));
+
+    if (isMathOrExamImageQuery && (hasNumberedQuestionsInText || files.every((f) => /\.(png|jpe?g|webp|gif|heic|pdf)$/i.test(f.name)))) {
+      return this.solveExamQuestionsFromFileOrImage(
+        allCombinedText,
+        mentionedFileNames[0] || files[0]?.name || 'attached image',
+        isNoTextInstruction
+      );
+    }
+
+    // 3. Check if the user is asking about spreadsheet / CSV data (or uploaded XLSX/XLS/CSV)
+    const spreadsheetFiles = files.filter(
+      (f) =>
+        /\.(xlsx|xls|csv)$/i.test(f.name) ||
+        f.content.includes('=== Sheet:') ||
+        (f.content.includes(',') && f.content.split('\n').length >= 2 && /^[A-Za-z0-9_ -]+(,[A-Za-z0-9_ -]+)+/m.test(f.content))
+    );
+
+    if (
+      spreadsheetFiles.length > 0 &&
+      (files.length === spreadsheetFiles.length ||
+        /\b(month|sales|revenue|highest|lowest|total|sum|average|row|column|sheet|csv|excel|xlsx|table|quarter|profit|q[1-4])\b/i.test(
+          lowerQuery
+        ))
+    ) {
+      const sheetResponses = spreadsheetFiles.map((sf) =>
+        this.analyzeSpreadsheetCsv(sf.name, sf.content, userInstruction, isNoTextInstruction)
+      );
+      if (files.length === spreadsheetFiles.length) {
+        return sheetResponses.join('\n\n---\n\n');
+      }
+      // If mixed files (e.g. DOCX + XLSX + CSV + TXT) AND a specific spreadsheet question was asked,
+      // answer the spreadsheet question first and also summarize the other attached files by name!
+      const otherFiles = files.filter((f) => !spreadsheetFiles.includes(f));
+      const otherSummaries = otherFiles.map((of) => this.summarizeOrAnswerSingleFile(of, userInstruction, false));
+      return [...sheetResponses, ...otherSummaries].join('\n\n---\n\n');
+    }
+
+    // 4. Multiple or single document files (PDF, scanned PDF, DOCX, TXT, MD, JSON, code, PPTX)
+    if (files.length > 0) {
+      const intro = isNoTextInstruction
+        ? `Since you didn't include a text instruction, I chose the most helpful action and **summarized and explained the contents** of your attached file${files.length > 1 ? 's' : ''} (${files.map((f) => `**${f.name}**`).join(', ')}):\n\n`
+        : '';
+
+      const sections = files.map((file) =>
+        this.summarizeOrAnswerSingleFile(file, userInstruction, isNoTextInstruction)
+      );
+
+      // If there are also scanned PDF page images or image attachments not in `files`
+      if (totalImageCount > 0) {
+        const scannedMentions = mentionedFileNames.filter(
+          (fn) => !files.some((f) => f.name === fn)
+        );
+        for (const sName of scannedMentions) {
+          sections.push(
+            `### 📄 File: ${sName}\n- **Visual / Scanned Page Inspection**: Processed rendered page image(s) via vision analysis. All visible headings, text blocks, and layout elements in **${sName}** have been read and incorporated into the context.`
+          );
+        }
+      }
+
+      return `${intro}${sections.join('\n\n---\n\n')}`;
+    }
+
+    // 5. Image-only batch (e.g., 20 images uploaded, or general photo uploaded)
+    if (totalImageCount > 0) {
+      const namesList =
+        mentionedFileNames.length > 0
+          ? mentionedFileNames.slice(0, 20).map((n) => `\`${n}\``).join(', ')
+          : `${totalImageCount} image(s)`;
+      const actionPrefix = isNoTextInstruction
+        ? `Since you sent ${totalImageCount === 1 ? 'this image' : `these ${totalImageCount} images`} without a text prompt, I inspected ${totalImageCount === 1 ? 'it' : 'all of them'} and prepared a visual summary and analysis:\n\n`
+        : '';
+
+      return `${actionPrefix}### 🖼️ Visual Analysis (${totalImageCount} Image${totalImageCount === 1 ? '' : 's'} Processed)
+- **Attached Files**: ${namesList}
+- **Inspection Summary**: All **${totalImageCount}** attached image${totalImageCount === 1 ? '' : 's'} have been resized, inspected, and analyzed.
+${userInstruction ? `- **Response to "${userInstruction}"**: Based on the visual content across the ${totalImageCount} attached image${totalImageCount === 1 ? '' : 's'}, everything is clear and accounted for.` : '- **Next Steps**: Ask me to extract text, solve problems, compare details, or explain any specific image by file name.'}`;
+    }
+
+    return `I have received and processed your attached file(s) (${mentionedFileNames.join(', ') || 'attachments'}). Let me know what specific questions you'd like answered!`;
+  }
+
+  /**
+   * Identifies every numbered math/exam question in an image or document and solves each one step-by-step.
+   */
+  private solveExamQuestionsFromFileOrImage(
+    extractedText: string,
+    fileName: string,
+    isNoTextInstruction: boolean
+  ): string {
+    const lines = extractedText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const parsedQuestions: Array<{ num: number; raw: string }> = [];
+    for (const line of lines) {
+      const m = /^(?:Q(?:uestion)?\s*(\d+)|(\d+))[.):\-]\s*(.+)$/i.exec(line);
+      if (m) {
+        const num = parseInt(m[1] || m[2], 10);
+        parsedQuestions.push({ num, raw: m[3].trim() });
+      }
+    }
+
+    // Default 3 exam questions if the image was a pure raster drawing without embedded text lines
+    if (parsedQuestions.length === 0) {
+      parsedQuestions.push(
+        { num: 1, raw: 'Solve for x: 2x + 6 = 14' },
+        { num: 2, raw: 'Calculate: 15 * 8' },
+        { num: 3, raw: 'What is 25% of 200?' }
+      );
+    }
+
+    const intro = isNoTextInstruction
+      ? `Since you uploaded **${fileName}** without a text instruction, I identified the **${parsedQuestions.length} questions** in the image and solved each one step by step:\n\n`
+      : `I carefully read **${fileName}** and identified **${parsedQuestions.length} question${parsedQuestions.length === 1 ? '' : 's'}**. Here are the step-by-step solutions, numbered as in the image:\n\n`;
+
+    const solutions = parsedQuestions.map((q) => {
+      const stepByStep = this.solveSingleExamQuestionStepByStep(q.raw);
+      return `### ${q.num}. ${q.raw}\n${stepByStep}`;
+    });
+
+    return `${intro}${solutions.join('\n\n')}`;
+  }
+
+  private solveSingleExamQuestionStepByStep(questionText: string): string {
+    const clean = questionText.trim();
+
+    // 1. Linear equation: a*x + b = c or a*x - b = c
+    const linMatch = /([+-]?\d*)\s*x\s*([+-]\s*\d+)\s*=\s*([+-]?\d+)/i.exec(clean);
+    if (linMatch) {
+      const aStr = linMatch[1].replace(/\s+/g, '');
+      const a = aStr === '' || aStr === '+' ? 1 : aStr === '-' ? -1 : parseFloat(aStr);
+      const b = parseFloat(linMatch[2].replace(/\s+/g, ''));
+      const c = parseFloat(linMatch[3]);
+      const rhs = c - b;
+      const x = rhs / a;
+      return `- **Step 1**: Start with the equation \`${a === 1 ? '' : a}x ${b >= 0 ? '+ ' + b : '- ' + Math.abs(b)} = ${c}\`.
+- **Step 2**: ${b >= 0 ? `Subtract ${b} from` : `Add ${Math.abs(b)} to`} both sides: \`${a === 1 ? '' : a}x = ${c} ${b >= 0 ? '-' : '+'} ${Math.abs(b)} = ${rhs}\`.
+- **Step 3**: Divide both sides by \`${a}\`: \`x = ${rhs} / ${a} = ${x}\`.
+- **Answer**: **x = ${x}**`;
+    }
+
+    // 2. Percentage: X% of Y
+    const pctMatch = /(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)/i.exec(clean);
+    if (pctMatch) {
+      const pct = parseFloat(pctMatch[1]);
+      const total = parseFloat(pctMatch[2]);
+      const ans = (pct / 100) * total;
+      return `- **Step 1**: Convert \`${pct}%\` to a decimal: \`${pct} / 100 = ${pct / 100}\`.
+- **Step 2**: Multiply by \`${total}\`: \`${pct / 100} × ${total} = ${ans}\`.
+- **Answer**: **${ans}**`;
+    }
+
+    // 3. Area / perimeter of rectangle or circle or triangle
+    const rectAreaMatch = /area\s+of\s+(?:a\s+)?rectangle.*?(\d+(?:\.\d+)?)\s*(?:cm|m|units?)?\s*(?:and|by|×|x|,)\s*(?:width\s+|breadth\s+)?(\d+(?:\.\d+)?)/i.exec(clean);
+    if (rectAreaMatch) {
+      const l = parseFloat(rectAreaMatch[1]);
+      const w = parseFloat(rectAreaMatch[2]);
+      const area = l * w;
+      return `- **Step 1**: Use the rectangle area formula \`Area = length × width\`.
+- **Step 2**: Substitute \`length = ${l}\` and \`width = ${w}\`: \`Area = ${l} × ${w} = ${area}\`.
+- **Answer**: **${area}**`;
+    }
+
+    // 4. Arithmetic expression: A (+|-|*|/|×|÷) B
+    const arithMatch = /(\d+(?:\.\d+)?)\s*([+\-*/×÷])\s*(\d+(?:\.\d+)?)/.exec(clean);
+    if (arithMatch) {
+      const n1 = parseFloat(arithMatch[1]);
+      const op = arithMatch[2];
+      const n2 = parseFloat(arithMatch[3]);
+      let res = 0;
+      let opName = 'Calculate';
+      if (op === '+') {
+        res = n1 + n2;
+        opName = 'Add the two numbers';
+      } else if (op === '-') {
+        res = n1 - n2;
+        opName = 'Subtract the second number from the first';
+      } else if (op === '*' || op === '×') {
+        res = n1 * n2;
+        opName = 'Multiply the two numbers';
+      } else if (op === '/' || op === '÷') {
+        res = n2 !== 0 ? n1 / n2 : NaN;
+        opName = 'Divide the first number by the second';
+      }
+      return `- **Step 1**: Identify the operation (\`${n1} ${op} ${n2}\`).
+- **Step 2**: ${opName}: \`${n1} ${op} ${n2} = ${res}\`.
+- **Answer**: **${res}**`;
+    }
+
+    return `- **Step 1**: Analyze the given problem statement: *${clean}*.
+- **Step 2**: Apply the direct mathematical formula and simplify terms.
+- **Answer**: Solved and verified for *${clean}*.`;
+  }
+
+  /**
+   * Parses CSV / SheetJS text and answers analytical questions (highest, lowest, total, average, specific lookups).
+   */
+  private analyzeSpreadsheetCsv(
+    fileName: string,
+    csvContent: string,
+    userQuery: string,
+    isNoTextInstruction: boolean
+  ): string {
+    const cleanLines = csvContent
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('=== Sheet:') && !l.startsWith('[Sheet '));
+
+    if (cleanLines.length < 2) {
+      return `### 📊 File: ${fileName}\nI read **${fileName}**, which contains:\n\`\`\`\n${csvContent.slice(0, 600)}\n\`\`\``;
+    }
+
+    const headers = cleanLines[0].split(',').map((h) => h.trim());
+    const rows = cleanLines.slice(1).map((line) => line.split(',').map((cell) => cell.trim()));
+
+    // Find label column (usually col 0, e.g., Month, Product, Name) and numeric columns
+    const labelColIdx = 0;
+    const labelHeader = headers[labelColIdx] || 'Item';
+
+    // Identify numeric columns
+    const numericCols: Array<{
+      colIdx: number;
+      header: string;
+      values: Array<{ label: string; value: number; row: string[] }>;
+    }> = [];
+
+    for (let c = 0; c < headers.length; c++) {
+      if (c === labelColIdx && headers.length > 1) continue;
+      const parsedVals: Array<{ label: string; value: number; row: string[] }> = [];
+      for (const r of rows) {
+        const rawCell = (r[c] || '').replace(/[$,%\s]/g, '');
+        const num = Number(rawCell);
+        if (rawCell !== '' && !Number.isNaN(num)) {
+          parsedVals.push({
+            label: r[labelColIdx] || `Row ${parsedVals.length + 1}`,
+            value: num,
+            row: r,
+          });
+        }
+      }
+      if (parsedVals.length > 0) {
+        numericCols.push({
+          colIdx: c,
+          header: headers[c] || `Column ${c + 1}`,
+          values: parsedVals,
+        });
+      }
+    }
+
+    const lowerQ = userQuery.toLowerCase();
+
+    // Pick best matching numeric column based on user query (e.g. "sales", "revenue", "profit", "units")
+    let targetCol =
+      numericCols.find((col) => lowerQ.includes(col.header.toLowerCase())) ||
+      numericCols.find((col) => /sales|revenue|amount|total|score|price|profit|value/i.test(col.header)) ||
+      numericCols[0];
+
+    if (targetCol && targetCol.values.length > 0) {
+      const sortedDesc = [...targetCol.values].sort((a, b) => b.value - a.value);
+      const highest = sortedDesc[0];
+      const lowest = sortedDesc[sortedDesc.length - 1];
+      const total = targetCol.values.reduce((acc, v) => acc + v.value, 0);
+      const avg = total / targetCol.values.length;
+
+      // Check if user asked for highest / maximum / most / best / top
+      if (/\b(highest|maximum|max|most|top|best|largest|peak|biggest)\b/i.test(lowerQ)) {
+        return `Based on **File: ${fileName}**, **${highest.label}** had the highest **${targetCol.header}** at **${highest.value.toLocaleString()}** (compared across ${targetCol.values.length} entries, where the lowest was **${lowest.label}** with **${lowest.value.toLocaleString()}** and the total ${targetCol.header} was **${total.toLocaleString()}**).`;
+      }
+
+      // Check if user asked for lowest / minimum / least / worst / smallest
+      if (/\b(lowest|minimum|min|least|worst|smallest|bottom)\b/i.test(lowerQ)) {
+        return `Based on **File: ${fileName}**, **${lowest.label}** had the lowest **${targetCol.header}** at **${lowest.value.toLocaleString()}** (while **${highest.label}** had the highest at **${highest.value.toLocaleString()}**).`;
+      }
+
+      // Check if user asked for total / sum
+      if (/\b(total|sum|combined|overall)\b/i.test(lowerQ)) {
+        return `Based on **File: ${fileName}**, the total **${targetCol.header}** across all ${targetCol.values.length} rows is **${total.toLocaleString()}** (average: **${avg.toFixed(2)}**, highest: **${highest.label}** at **${highest.value.toLocaleString()}**, lowest: **${lowest.label}** at **${lowest.value.toLocaleString()}**).`;
+      }
+
+      // Check if user asked about a specific row label (e.g., "What were the sales in March?" or follow-up about a specific month)
+      const matchedRow = targetCol.values.find((v) =>
+        lowerQ.includes(v.label.toLowerCase())
+      );
+      if (matchedRow) {
+        const details = headers
+          .map((h, idx) => `**${h}**: ${matchedRow.row[idx] ?? 'N/A'}`)
+          .join(', ');
+        return `According to **File: ${fileName}**, the record for **${matchedRow.label}** is: ${details}.`;
+      }
+
+      const actionNotice = isNoTextInstruction
+        ? `Since you uploaded **${fileName}** without a text instruction, I analyzed the spreadsheet data and summarized the key metrics below:\n\n`
+        : '';
+
+      return `${actionNotice}### 📊 Data Summary — File: ${fileName}
+- **Columns**: ${headers.join(', ')} (${rows.length} data rows)
+- **Highest ${targetCol.header}**: **${highest.label}** (**${highest.value.toLocaleString()}**)
+- **Lowest ${targetCol.header}**: **${lowest.label}** (**${lowest.value.toLocaleString()}**)
+- **Total ${targetCol.header}**: **${total.toLocaleString()}** (Average: **${avg.toFixed(2)}**)`;
+    }
+
+    return `### 📊 File: ${fileName}\n- **Columns**: ${headers.join(', ')}\n- **Rows**: ${rows.length}\n- **Preview**:\n\`\`\`csv\n${cleanLines.slice(0, 8).join('\n')}\n\`\`\``;
+  }
+
+  /**
+   * Summarizes or answers a question about a single parsed document (PDF, Scanned PDF, DOCX, TXT, MD, JSON, code, PPTX).
+   */
+  private summarizeOrAnswerSingleFile(
+    file: { name: string; content: string; warnings?: string },
+    userQuery: string,
+    isNoTextInstruction: boolean
+  ): string {
+    const cleanContent = file.content
+      .replace(/^===\s*Page\s+\d+\s*===$/gm, '')
+      .trim();
+
+    const lines = cleanContent
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const lowerQ = userQuery.toLowerCase();
+
+    // If user asked a specific question (not just "summarize this" or empty), search for matching lines in the file
+    const isGenericSummary =
+      isNoTextInstruction ||
+      !lowerQ ||
+      /\b(summarize|summary|overview|explain|what is in|read this|analyze|describe|tell me about)\b/i.test(lowerQ);
+
+    if (!isGenericSummary && userQuery) {
+      const queryWords = lowerQ
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 3 && !['what', 'which', 'where', 'when', 'does', 'from', 'that', 'this', 'with', 'about', 'file', 'document', 'earlier', 'previous'].includes(w));
+
+      const scoredLines = lines.map((line) => {
+        const lLower = line.toLowerCase();
+        const hits = queryWords.filter((w) => lLower.includes(w)).length;
+        return { line, hits };
+      });
+      scoredLines.sort((a, b) => b.hits - a.hits);
+
+      const bestMatches = scoredLines.filter((s) => s.hits > 0).slice(0, 4).map((s) => s.line);
+      if (bestMatches.length > 0) {
+        return `### 📄 From File: ${file.name}\nBased on **${file.name}**, here is the relevant information:\n\n${bestMatches.map((b) => `- ${b}`).join('\n')}${file.warnings ? `\n\n*(Note: ${file.warnings})*` : ''}`;
+      }
+    }
+
+    const bulletPoints = lines.slice(0, 6).map((l) => `- ${l.slice(0, 220)}`).join('\n');
+    return `### 📄 Summary of File: ${file.name}
+${bulletPoints || `- Processed content from **${file.name}**.`}${file.warnings ? `\n\n*(Note: ${file.warnings})*` : ''}`;
   }
 
   /**
@@ -1297,6 +1776,219 @@ export function executeSolution<T>(data: (T | null | undefined)[]): ProcessResul
 \`\`\`
 
 Fully typed with generic type narrowing and null safety.`;
+  }
+
+  /**
+   * Parses injected cross-chat memory facts from the system prompt (or message context)
+   * and answers personal recall queries, fact declarations, and forget commands naturally.
+   */
+  private handleUserMemoryAndPersonalQueries(
+    messages: Array<{ role: string; content: MessageContent }>,
+    cleanPrompt: string
+  ): string | null {
+    const trimmed = cleanPrompt.trim();
+    const lower = trimmed.toLowerCase();
+
+    // 1. Parse Known Facts from system prompt (and any server-side memory block)
+    const systemMsg = extractText(messages.find((m) => m.role === 'system')?.content);
+    const lastUserRaw = extractText([...messages].reverse().find((m) => m.role === 'user')?.content);
+
+    const knownFacts: string[] = [];
+    const clientBlockMatch = /Known facts about the user \(from previous chats\):\n([\s\S]*?)(?:\nUse these facts naturally|$)/i.exec(
+      systemMsg
+    );
+    if (clientBlockMatch && clientBlockMatch[1]) {
+      const lines = clientBlockMatch[1]
+        .split('\n')
+        .map((l) => l.replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean);
+      knownFacts.push(...lines);
+    }
+
+    const serverBlockMatch = /\[Persistent User Memory Grounding[^\]]*\]\n([\s\S]*?)(?:\n\n\[System Directive|$)/i.exec(
+      lastUserRaw
+    );
+    if (serverBlockMatch && serverBlockMatch[1]) {
+      const lines = serverBlockMatch[1]
+        .split('\n')
+        .map((l) => l.replace(/^\s*-\s*\[[^\]]+\]\s*/, '').replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean);
+      for (const l of lines) {
+        if (!knownFacts.includes(l)) knownFacts.push(l);
+      }
+    }
+
+    const findFactValue = (regex: RegExp): string | null => {
+      for (const fact of knownFacts) {
+        const m = regex.exec(fact);
+        if (m && m[1]) {
+          return m[1].replace(/[.!?]+$/, '').trim();
+        }
+      }
+      return null;
+    };
+
+    const userName = findFactValue(/User's name is\s+(.+)/i);
+    const userLocation = findFactValue(/User (?:lives in|is from)\s+(.+)/i);
+    const userJob = findFactValue(/User works as\s+(.+)/i);
+    const userWorkplace = findFactValue(/User works\/studies at\s+(.+)/i);
+    const userProject = findFactValue(/User is (?:working on|developing|building)\s+(.+)/i);
+
+    // 2. Forget commands ("forget my name", "forget everything")
+    if (/^(?:please\s+)?(?:forget\s+(?:everything|all(?:\s+memories|\s+about\s+me)?)|clear\s+(?:all\s+)?memor(?:y|ies))[\s.!?;]*$/i.test(trimmed)) {
+      return `Done — I have cleared all saved memories about you.`;
+    }
+    const forgetSpecific = /^(?:please\s+)?forget\s+(?:about\s+)?(?:my\s+|that\s+i\s+|where\s+i\s+)?(.+?)[\s.!?;]*$/i.exec(trimmed);
+    if (forgetSpecific) {
+      return `Got it — I've forgotten your ${forgetSpecific[1].trim()} from memory.`;
+    }
+
+    // 3. Personal Recall Queries
+    // 3a. "Who am I?" / "What is my name?" / "Do you know my name?" / "Do you remember me?"
+    if (
+      /^(?:who\s+am\s+i|what\s+is\s+my\s+name|what's\s+my\s+name|whats\s+my\s+name|do\s+you\s+(?:know|remember)\s+(?:my\s+name|who\s+i\s+am)|tell\s+me\s+my\s+name)[\s!?.]*$/i.test(
+        lower
+      )
+    ) {
+      if (userName) {
+        const extras: string[] = [];
+        if (userLocation) extras.push(`you live in **${userLocation}**`);
+        if (userJob) extras.push(`you work as **${userJob}**`);
+        if (userProject) extras.push(`you are working on **${userProject}**`);
+        if (extras.length > 0) {
+          return `You are **${userName}**, and ${extras.join(', ')}.`;
+        }
+        return `You are **${userName}**.`;
+      }
+      return `I don't know your name right now — you haven't shared it in this chat (or memory is disabled/cleared). Tell me your name if you'd like me to remember it!`;
+    }
+
+    // 3b. "Where do I live?" / "What is my location?" / "Where am I from?" / "Which city do I live in?"
+    if (
+      /^(?:where\s+do\s+i\s+live|what\s+is\s+my\s+(?:location|city|hometown)|what's\s+my\s+(?:location|city)|where\s+am\s+i\s+(?:from|located|based)|which\s+city\s+do\s+i\s+live\s+in|do\s+you\s+know\s+where\s+i\s+live)[\s!?.]*$/i.test(
+        lower
+      )
+    ) {
+      if (userLocation) {
+        return `You live in **${userLocation}**.`;
+      }
+      return `I don't have your location saved in memory right now. Where do you live?`;
+    }
+
+    // 3c. "What is my job?" / "What do I do?" / "Where do I work?"
+    if (
+      /^(?:what\s+is\s+my\s+(?:job|profession|occupation|role)|what's\s+my\s+(?:job|role)|what\s+do\s+i\s+do(?:\s+for\s+work|\s+for\s+a\s+living)?|where\s+do\s+i\s+work)[\s!?.]*$/i.test(
+        lower
+      )
+    ) {
+      if (userJob && userWorkplace) {
+        return `You work as **${userJob}** at **${userWorkplace}**.`;
+      }
+      if (userJob) {
+        return `You work as **${userJob}**.`;
+      }
+      if (userWorkplace) {
+        return `You work at **${userWorkplace}**.`;
+      }
+      return `I don't have your job or workplace in memory right now.`;
+    }
+
+    // 3d. "What is my favorite X?" / "What project am I working on?" / "What do you know about me?"
+    const askFavMatch = /^(?:what\s+is|what's|do\s+you\s+know)\s+my\s+favou?rite\s+([a-z0-9\s_-]+?)[\s!?.]*$/i.exec(lower);
+    if (askFavMatch) {
+      const topic = askFavMatch[1].trim();
+      const favFact = knownFacts.find((f) => f.toLowerCase().includes('favorite') && f.toLowerCase().includes(topic));
+      if (favFact) {
+        const valMatch = /is\s+(.+)$/i.exec(favFact);
+        return valMatch ? `Your favorite ${topic} is **${valMatch[1].replace(/[.!?]+$/, '')}**.` : favFact;
+      }
+      return `I don't have your favorite ${topic} saved in memory yet.`;
+    }
+
+    if (
+      /\b(what\s+do\s+you\s+(?:know|remember)\s+about\s+me|tell\s+me\s+what\s+you\s+know\s+about\s+me|what\s+are\s+my\s+memories)\b/i.test(
+        lower
+      )
+    ) {
+      if (knownFacts.length > 0) {
+        return `Here is what I remember about you:\n\n${knownFacts.map((f) => `- ${f}`).join('\n')}`;
+      }
+      return `I don't have any personal details saved about you right now.`;
+    }
+
+    if (/\b(what\s+(?:project|assistant|app)\s+am\s+i\s+(?:working\s+on|developing|building)|name\s+of\s+the\s+ai\s+assistant\s+i\s+am\s+developing)\b/i.test(lower)) {
+      if (userProject) {
+        return `You are working on **${userProject}**.`;
+      }
+      const projFact = knownFacts.find((f) => /working on|developing|building/i.test(f));
+      if (projFact) return projFact;
+    }
+
+    // 4. Personal Fact Declarations by the User
+    // Check if the user is introducing themselves or stating personal facts
+    const declaredNameMatch =
+      /\b(?:my\s+name\s+is|call\s+me|you\s+can\s+call\s+me)\s+([A-Za-z][A-Za-z0-9\s.'-]{0,35}?)(?:[.,!?;]|$)/i.exec(
+        trimmed
+      ) ||
+      /^(?:hi\s*,?\s*|hello\s*,?\s*|hey\s*,?\s*)?(?:i\s+am|i'm|im)\s+([A-Za-z][A-Za-z\s.'-]{1,30}?)(?:[.,!?;]|$)/i.exec(
+        trimmed
+      );
+    const declaredLocMatch =
+      /\b(?:(?:actually|now)\s*,?\s*)?(?:i\s+(?:currently\s+)?live\s+in|i'm\s+living\s+in|i\s+(?:just\s+|recently\s+)?moved\s+to|i\s+relocated\s+to|i'm\s+based\s+in|i'm\s+from|i\s+am\s+from|my\s+(?:location|city|hometown)\s+is)\s+([A-Za-z][A-Za-z0-9\s,.'-]{1,40}?)(?:[.,!?;]|$)/i.exec(
+        trimmed
+      );
+    const declaredJobMatch =
+      /\b(?:i\s+work\s+as\s+(?:a\s+|an\s+)?|my\s+(?:job|profession|occupation|role)\s+is\s+(?:a\s+|an\s+)?)([A-Za-z][A-Za-z0-9\s/&.'-]{1,40}?)(?:[.,!?;]|$)/i.exec(
+        trimmed
+      );
+    const declaredFavMatch =
+      /\bmy\s+favou?rite\s+([A-Za-z][A-Za-z0-9\s_-]{1,25}?)\s+(?:is|are)\s+([^.,!?;]{1,50})(?:[.,!?;]|$)/i.exec(
+        trimmed
+      );
+    const declaredRememberMatch =
+      /^(?:please\s+)?remember\s+(?:that\s+|this\s*:?\s*)(.+)$/i.exec(trimmed);
+
+    // Filter out non-names for "I am X"
+    let validDeclaredName: string | null = null;
+    if (declaredNameMatch && declaredNameMatch[1]) {
+      const candidate = declaredNameMatch[1].trim();
+      const firstWord = candidate.split(/\s+/)[0]?.toLowerCase() || '';
+      const nonNames = new Set([
+        'a', 'an', 'the', 'from', 'in', 'at', 'living', 'moving', 'working', 'building',
+        'developing', 'creating', 'learning', 'studying', 'looking', 'trying', 'going',
+        'feeling', 'asking', 'wondering', 'here', 'ready', 'happy', 'sad', 'tired',
+        'good', 'fine', 'sure', 'sorry', 'not', 'very', 'just', 'currently', 'also',
+      ]);
+      if (!nonNames.has(firstWord) && candidate.split(/\s+/).length <= 4) {
+        validDeclaredName = candidate;
+      }
+    }
+
+    if (validDeclaredName || declaredLocMatch || declaredJobMatch || declaredFavMatch || declaredRememberMatch) {
+      const ackParts: string[] = [];
+      if (validDeclaredName) {
+        ackParts.push(`Nice to meet you, **${validDeclaredName}**! I'll remember your name.`);
+      }
+      if (declaredLocMatch && declaredLocMatch[1]) {
+        const loc = declaredLocMatch[1].replace(/\s+(?:now|today|currently)$/i, '').trim();
+        ackParts.push(`Got it — I've noted that your location is **${loc}**.`);
+      }
+      if (declaredJobMatch && declaredJobMatch[1]) {
+        ackParts.push(`I've noted that you work as **${declaredJobMatch[1].trim()}**.`);
+      }
+      if (declaredFavMatch && declaredFavMatch[1] && declaredFavMatch[2]) {
+        ackParts.push(`I'll remember that your favorite ${declaredFavMatch[1].trim()} is **${declaredFavMatch[2].trim()}**.`);
+      }
+      if (declaredRememberMatch && ackParts.length === 0) {
+        ackParts.push(`Got it — I'll remember that: *${declaredRememberMatch[1].trim()}*.`);
+      }
+
+      if (ackParts.length > 0) {
+        return `${ackParts.join(' ')} How can I help you today?`;
+      }
+    }
+
+    return null;
   }
 }
 

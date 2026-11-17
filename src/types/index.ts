@@ -7,8 +7,25 @@ export interface Attachment {
   fileName: string;
   fileSize: number;
   mimeType: string;
+  kind?: 'image' | 'text';
+  status?: 'processing' | 'ready' | 'error';
+  errorMessage?: string;
   extractedText?: string;
   previewUrl?: string;
+  thumbnailUrl?: string;
+  pageImages?: string[];
+  warnings?: string[];
+  meta?: {
+    originalSize?: number;
+    processedSize?: number;
+    pageCount?: number;
+    truncated?: boolean;
+    sheetCount?: number;
+    slideCount?: number;
+    width?: number;
+    height?: number;
+    embeddedText?: string;
+  };
 }
 
 export interface SearchSource {

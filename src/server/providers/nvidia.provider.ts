@@ -4,13 +4,6 @@ import { DEFAULT_CHAT_MODEL } from './model.config.js';
 
 export const CLEAN_MODELS: ModelInfo[] = [
   {
-    id: 'mistral-large-4',
-    name: 'Mistral Large 4',
-    description: 'Mistral Large 4',
-    contextWindow: 128000,
-    supportsVision: false,
-  },
-  {
     id: 'gemini-flash',
     name: 'Gemini 2.5 Flash',
     description: 'Fast multimodal model',
@@ -60,20 +53,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     supportsVision: false,
   },
   {
-    id: 'deepseek-v4.1-flash',
-    name: 'Deepseek-v4 Flash',
-    description: 'DeepSeek V4.1 Flash model',
-    contextWindow: 128000,
-    supportsVision: false,
-  },
-  {
-    id: 'glm-5.3-flash',
-    name: 'GLM 5.3 Flash',
-    description: 'GLM 5.3 Flash model',
-    contextWindow: 128000,
-    supportsVision: false,
-  },
-  {
     id: 'muse-glimmer-30b',
     name: 'Muse-Glimmer-30B',
     description: 'Meta Muse Glimmer 30B model',
@@ -99,13 +78,6 @@ export const CLEAN_MODELS: ModelInfo[] = [
     id: 'recursive',
     name: 'Recursive',
     description: 'Recursive Flint model',
-    contextWindow: 128000,
-    supportsVision: false,
-  },
-  {
-    id: 'xingchen',
-    name: 'Xingchen',
-    description: 'Xingchen AGI 29B model',
     contextWindow: 128000,
     supportsVision: false,
   },
@@ -197,7 +169,7 @@ export class NvidiaProvider implements AIProvider {
   }
 
   resolveModel(_modelId?: string): string {
-    // Always resolve to the configured NVIDIA model (Mistral Large 4).
+    // Always resolve to the configured NVIDIA model.
     // The 'auto' ID and any unrecognised aliases are intentionally mapped here
     // so the correct real model name is sent to the NVIDIA NIM API.
     const model = process.env.NVIDIA_MODEL || DEFAULT_CHAT_MODEL;

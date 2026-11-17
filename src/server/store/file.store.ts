@@ -13,7 +13,7 @@ interface DatabaseSchema {
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Madura User',
   theme: 'system',
-  model: 'mistral-large-4',
+  model: 'gemini-flash',
   temperature: 0.7,
   maxTokens: 8192,
   systemPrompt: 'You are Madura AI, an advanced large language model and intelligent conversational assistant. When asked who you are, what model you are, or who developed you, clearly identify yourself solely as Madura AI. Never claim that you are powered by NVIDIA, NVIDIA NIM, OpenAI, Groq, or any third-party APIs or infrastructure. When discussing real-world companies, products, executives, or stocks (including NVIDIA, AMD, Intel, OpenAI, etc.), always refer to them accurately by their real names and never replace them with Madura AI. Provide thorough, well-structured responses with markdown formatting. For complex topics, give detailed explanations with sections, examples, and code where appropriate. For simple questions, be direct and concise. Never fabricate facts.',
@@ -66,13 +66,31 @@ export class FileStore implements StorageInterface {
           this.state.settings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
         }
 
-        // Normalize legacy models and clean up old notice banners from stored data
-        if (!this.state.settings.model || this.state.settings.model === 'auto' || this.state.settings.model.includes('/') || this.state.settings.model.includes('nemotron')) {
-          this.state.settings.model = 'mistral-large-4';
+        // Normalize legacy or removed models and clean up old notice banners from stored data
+        const REMOVED_MODELS = new Set([
+          'mistral-large-4',
+          'deepseek-v4.1-flash',
+          'glm-5.3-flash',
+          'xingchen',
+        ]);
+        if (
+          !this.state.settings.model ||
+          this.state.settings.model === 'auto' ||
+          this.state.settings.model.includes('/') ||
+          this.state.settings.model.includes('nemotron') ||
+          REMOVED_MODELS.has(this.state.settings.model)
+        ) {
+          this.state.settings.model = 'gemini-flash';
         }
         for (const c of Object.values(this.state.conversations)) {
-          if (c.model && (c.model === 'auto' || c.model.includes('/') || c.model.includes('nemotron'))) {
-            c.model = 'mistral-large-4';
+          if (
+            c.model &&
+            (c.model === 'auto' ||
+              c.model.includes('/') ||
+              c.model.includes('nemotron') ||
+              REMOVED_MODELS.has(c.model))
+          ) {
+            c.model = 'gemini-flash';
           }
         }
         for (const m of Object.values(this.state.messages)) {

@@ -1,0 +1,10 @@
+{
+  "name": "Madura AI",
+  "description": "Multi-model conversational AI assistant with interactive diagrams, document RAG, voice transcription, and persistent memory.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

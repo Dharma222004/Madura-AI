@@ -38,8 +38,8 @@ export function createApp(deps: AppDependencies): Express {
 
   // Core Middleware
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.use(securityHeaders);
   app.use(rateLimiter);
 
@@ -58,7 +58,7 @@ export function createApp(deps: AppDependencies): Express {
 
   // Serve static client bundle in production
   const clientDist = path.resolve(process.cwd(), 'dist/client');
-  if (fs.existsSync(clientDist)) {
+  if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use(express.static(clientDist));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api')) {

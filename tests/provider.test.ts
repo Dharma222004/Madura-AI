@@ -5,7 +5,7 @@ import { MockProvider } from '../src/server/providers/mock.provider.js';
 describe('AI Providers', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.stubEnv('NVIDIA_MODEL', 'mistralai/mistral-large-4-1t-a52b');
+    vi.stubEnv('NVIDIA_MODEL', 'nvidia/nemotron-3-ultra-550b-a55b');
   });
 
   afterEach(() => {
@@ -52,10 +52,14 @@ describe('AI Providers', () => {
       expect(result.finishReason).toBe('interrupted');
     });
 
-    it('should return available model metadata', async () => {
+    it('should return available model metadata and exclude removed models', async () => {
       const models = await provider.listModels();
       expect(models.length).toBeGreaterThan(0);
-      expect(models.some(m => m.id === 'mistral-large-4')).toBe(true);
+      expect(models.some(m => m.id === 'gemini-flash')).toBe(true);
+      expect(models.some(m => m.id === 'mistral-large-4')).toBe(false);
+      expect(models.some(m => m.id === 'deepseek-v4.1-flash')).toBe(false);
+      expect(models.some(m => m.id === 'glm-5.3-flash')).toBe(false);
+      expect(models.some(m => m.id === 'xingchen')).toBe(false);
       expect(models.some(m => m.id === 'auto')).toBe(false);
     });
 

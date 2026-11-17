@@ -103,18 +103,23 @@ export const MessageItem = React.memo<MessageItemProps>(
       <div className="message-content-wrapper">
         {/* Attachments preview */}
         {message.attachments && message.attachments.length > 0 && (
-          <div className="message-attachments-list">
+          <div className="message-attachments-list" data-testid="message-attachments-list">
             {message.attachments.map((att) => {
+              const imgSrc =
+                (att.previewUrl && att.previewUrl.startsWith('data:image/') ? att.previewUrl : undefined) ||
+                (att.thumbnailUrl && att.thumbnailUrl.startsWith('data:image/') ? att.thumbnailUrl : undefined);
               const isImage =
-                Boolean(att.previewUrl && att.previewUrl.startsWith('data:image/')) ||
+                att.kind === 'image' ||
+                Boolean(imgSrc) ||
                 Boolean(att.mimeType && att.mimeType.startsWith('image/'));
               return (
-                <div key={att.id} className="attachment-badge">
-                  {isImage && att.previewUrl ? (
+                <div key={att.id} className="attachment-badge" data-testid="sent-attachment-badge">
+                  {isImage && imgSrc ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <img
-                        src={att.previewUrl}
+                        src={imgSrc}
                         alt={att.fileName}
+                        data-testid="sent-attachment-image"
                         style={{
                           maxWidth: 240,
                           maxHeight: 180,
@@ -130,7 +135,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                       <FileText size={14} className="attachment-badge-icon" />
                       <span>{att.fileName}</span>
                       <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                        ({(att.fileSize / 1024).toFixed(0)} KB)
+                        ({Math.max(1, Math.round((att.fileSize || 0) / 1024))} KB)
                       </span>
                     </>
                   )}
@@ -161,7 +166,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               </button>
             </div>
           </div>
-        ) : (
+        ) : isUser && !message.content.trim() && message.attachments && message.attachments.length > 0 ? null : (
           <div className="message-bubble">
             {isUser ? (
               <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>

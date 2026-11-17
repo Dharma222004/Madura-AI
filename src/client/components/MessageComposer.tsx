@@ -5,51 +5,69 @@ import {
   Paperclip,
   X,
   FileText,
+  FileSpreadsheet,
+  FileCode,
+  Image as ImageIcon,
   Loader2,
   Globe,
   Mic,
-  MicOff,
   Check,
   Trash2,
   AlertCircle,
-  Plus,
-  Sparkles,
 } from 'lucide-react';
 import { Attachment, ModelInfo } from '../../types/index.js';
 import * as api from '../services/api.js';
 import { ModelSelector } from './ModelSelector.js';
+import {
+  MAX_FILES,
+  validateFileBatch,
+  sanitizeFileName,
+  getFileCategory,
+} from '../config/upload.config.js';
+import { processFile } from '../services/fileProcessor.js';
 
 interface MessageComposerProps {
   isStreaming: boolean;
   enterToSend: boolean;
   attachments: Attachment[];
   initialDraft?: string;
+  activeConversationId?: string | null;
   onSendMessage: (content: string, enableSearch?: boolean) => void;
   onStopGeneration: () => void;
   onAddAttachment: (att: Attachment) => void;
+  onUpdateAttachment?: (id: string, updates: Partial<Attachment>) => void;
   onRemoveAttachment: (id: string) => void;
   models?: ModelInfo[];
   selectedModel?: string;
   onSelectModel?: (id: string) => void;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb >= 100 ? 0 : 1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
 
 export const MessageComposer: React.FC<MessageComposerProps> = ({
   isStreaming,
   enterToSend,
   attachments,
   initialDraft = '',
+  activeConversationId,
   onSendMessage,
   onStopGeneration,
   onAddAttachment,
+  onUpdateAttachment,
   onRemoveAttachment,
   models,
   selectedModel,
   onSelectModel,
 }) => {
   const [content, setContent] = useState(initialDraft);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [rejectionReasons, setRejectionReasons] = useState<string[]>([]);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [forceSearch, setForceSearch] = useState(false);
 
   // Voice recording & Groq Whisper STT state
@@ -65,6 +83,28 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Track in-flight file processing AbortControllers so removal or chat switch cancels immediately
+  const fileAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Keep latest attachments count & total bytes in a ref for accurate synchronous batch validation
+  const attachmentsRef = useRef<Attachment[]>(attachments);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  // Cancel any in-flight file processing if the user switches or closes the chat, or unmounts
+  useEffect(() => {
+    return () => {
+      for (const ctrl of fileAbortControllersRef.current.values()) {
+        try {
+          ctrl.abort();
+        } catch {
+          // ignore
+        }
+      }
+      fileAbortControllersRef.current.clear();
+    };
+  }, [activeConversationId]);
 
   // Sync draft from external prompt selections (e.g. suggestion cards)
   useEffect(() => {
@@ -94,7 +134,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   }, [content]);
 
-
   // Clean up recording tracks & intervals on unmount
   useEffect(() => {
     return () => {
@@ -111,7 +150,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       streamRef.current.getTracks().forEach((track) => {
         try {
           track.stop();
-        } catch { }
+        } catch {}
       });
       streamRef.current = null;
     }
@@ -140,7 +179,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       });
       streamRef.current = stream;
 
-      // Dynamically select best supported audio MIME type
       let selectedMimeType = '';
       if (typeof MediaRecorder.isTypeSupported === 'function') {
         if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -167,7 +205,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         }
       };
 
-      recorder.start(250); // Collect in 250ms chunks
+      recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -175,7 +213,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       timerIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 300) {
-            // Auto-stop at 5 minutes
             stopRecording();
             return 300;
           }
@@ -217,22 +254,16 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         return;
       }
 
-      // Upload audio to Groq Whisper Large V3 Turbo transcription endpoint
       setIsTranscribing(true);
       setVoiceError(null);
       try {
-        const result = await api.transcribeAudio(
-          audioBlob,
-          `voice_note.${ext}`
-        );
-
+        const result = await api.transcribeAudio(audioBlob, `voice_note.${ext}`);
         const text = result.text.trim();
         if (text) {
           setContent((prev) => {
             const trimmedPrev = prev.trim();
             return trimmedPrev ? `${trimmedPrev} ${text}` : text;
           });
-          // Focus textarea so user can review and edit recognized text before sending
           setTimeout(() => {
             if (textareaRef.current) {
               textareaRef.current.focus();
@@ -263,20 +294,189 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const cancelRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
-        mediaRecorderRef.current.onstop = null; // Prevent transcription trigger
+        mediaRecorderRef.current.onstop = null;
         mediaRecorderRef.current.stop();
-      } catch { }
+      } catch {}
     }
     audioChunksRef.current = [];
     cleanUpRecording();
   };
-
 
   const formatTimer = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  /**
+   * Validates and processes a batch of selected/dropped/pasted files in the browser.
+   */
+  const handleFilesSelected = async (incomingFiles: FileList | File[]) => {
+    const fileArray = Array.from(incomingFiles || []);
+    if (fileArray.length === 0) return;
+
+    const currentAtts = attachmentsRef.current;
+    const { acceptedIndices, rejected } = validateFileBatch(fileArray, currentAtts);
+    const accepted = acceptedIndices.map((idx) => fileArray[idx]);
+
+    if (rejected.length > 0) {
+      setRejectionReasons(rejected.map((r) => r.reason));
+    } else {
+      setRejectionReasons([]);
+    }
+
+    if (accepted.length === 0) return;
+
+    // 1. Immediately add placeholder entries with 'processing' status so user sees per-file spinners & counter
+    const pendingEntries: Array<{ id: string; file: File; controller: AbortController }> = [];
+
+    for (const file of accepted) {
+      const id = `att_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const controller = new AbortController();
+      fileAbortControllersRef.current.set(id, controller);
+
+      const safeName = sanitizeFileName(file.name);
+      const category = getFileCategory(safeName, file.type);
+
+      const placeholder: Attachment = {
+        id,
+        fileName: safeName,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        kind: category === 'image' ? 'image' : 'text',
+        status: 'processing',
+        extractedText: '',
+      };
+
+      onAddAttachment(placeholder);
+      pendingEntries.push({ id, file, controller });
+    }
+
+    // 2. Process each accepted file asynchronously in browser
+    await Promise.all(
+      pendingEntries.map(async ({ id, file, controller }) => {
+        try {
+          const processed = await processFile(file, controller.signal);
+          if (controller.signal.aborted) return;
+
+          const updates: Partial<Attachment> = {
+            fileName: processed.name,
+            mimeType: processed.type,
+            kind: processed.kind,
+            status: 'ready',
+            extractedText:
+              processed.kind === 'text'
+                ? processed.content
+                : processed.extractedText || `[Image: ${processed.name}]`,
+            previewUrl: processed.kind === 'image' ? processed.content : undefined,
+            thumbnailUrl: processed.thumbnailUrl,
+            pageImages: processed.pageImages,
+            warnings: processed.warnings,
+            meta: processed.meta,
+          };
+
+          if (onUpdateAttachment) {
+            onUpdateAttachment(id, updates);
+          } else {
+            onRemoveAttachment(id);
+            onAddAttachment({
+              id,
+              fileName: processed.name,
+              mimeType: processed.type,
+              fileSize: file.size,
+              ...updates,
+            });
+          }
+        } catch (err: any) {
+          if (controller.signal.aborted || err?.name === 'AbortError') return;
+          const errMsg = err?.message || `Failed to process "${file.name}".`;
+          if (onUpdateAttachment) {
+            onUpdateAttachment(id, {
+              status: 'error',
+              errorMessage: errMsg,
+            });
+          }
+          setRejectionReasons((prev) => [...prev, errMsg]);
+        } finally {
+          fileAbortControllersRef.current.delete(id);
+        }
+      })
+    );
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await handleFilesSelected(files);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveFile = (id: string) => {
+    const ctrl = fileAbortControllersRef.current.get(id);
+    if (ctrl) {
+      try {
+        ctrl.abort();
+      } catch {}
+      fileAbortControllersRef.current.delete(id);
+    }
+    onRemoveAttachment(id);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragActive) {
+      setIsDragActive(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragActive(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      await handleFilesSelected(e.dataTransfer.files);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const pastedFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          pastedFiles.push(file);
+        }
+      }
+    }
+
+    if (pastedFiles.length > 0) {
+      e.preventDefault();
+      await handleFilesSelected(pastedFiles);
+    }
+  };
+
+  const isAnyFileProcessing = attachments.some((a) => a.status === 'processing');
+  const readyAttachments = attachments.filter((a) => a.status !== 'error' && a.status !== 'processing');
+
+  const canSubmit =
+    (content.trim().length > 0 || readyAttachments.length > 0) &&
+    !isAnyFileProcessing &&
+    !isTranscribing &&
+    !isRecording;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
@@ -291,12 +491,12 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   };
 
   const handleSend = () => {
-    if (isStreaming || isTranscribing || isRecording) return;
-    if (!content.trim() && attachments.length === 0) return;
+    if (isStreaming || isTranscribing || isRecording || isAnyFileProcessing) return;
+    if (!content.trim() && readyAttachments.length === 0) return;
 
     onSendMessage(content.trim(), forceSearch || undefined);
     setContent('');
-    setUploadError(null);
+    setRejectionReasons([]);
     setVoiceError(null);
     setForceSearch(false);
 
@@ -305,74 +505,143 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsUploading(true);
-    setUploadError(null);
-
-    for (let i = 0; i < files.length; i++) {
-      try {
-        const att = await api.uploadFile(files[i]);
-        onAddAttachment(att);
-      } catch (err: any) {
-        setUploadError(err.message || 'File upload failed');
-      }
+  const renderAttachmentIcon = (att: Attachment) => {
+    const cat = getFileCategory(att.fileName, att.mimeType);
+    if (cat === 'spreadsheet') {
+      return <FileSpreadsheet size={14} style={{ color: '#10b981', flexShrink: 0 }} />;
     }
-
-    setIsUploading(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    if (cat === 'text' && /\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rs|rb|php|html|css|json|xml|yaml|yml|sql)$/i.test(att.fileName)) {
+      return <FileCode size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />;
     }
+    if (cat === 'image') {
+      return <ImageIcon size={14} style={{ color: 'var(--accent-light)', flexShrink: 0 }} />;
+    }
+    return <FileText size={14} style={{ color: 'var(--accent-light)', flexShrink: 0 }} />;
   };
-
-  const canSubmit = (content.trim().length > 0 || attachments.length > 0) && !isUploading && !isTranscribing && !isRecording;
 
   return (
     <div className="composer-outer">
-      <div className={`composer-box ${isMultiLine ? 'is-multiline' : ''} ${attachments.length > 0 ? 'has-attachments' : ''}`}>
-        {/* Attachment Pills */}
+      <div
+        className={`composer-box ${isMultiLine ? 'is-multiline' : ''} ${
+          attachments.length > 0 || rejectionReasons.length > 0 ? 'has-attachments' : ''
+        } ${isDragActive ? 'composer-drag-active' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        data-testid="composer-dropzone"
+      >
+        {/* Preview Area Above Input: Counter + Image Thumbnails + File Chips */}
         {attachments.length > 0 && (
-          <div className="composer-attachments">
-            {attachments.map((att) => {
-              const isImage =
-                Boolean(att.previewUrl && att.previewUrl.startsWith('data:image/')) ||
-                Boolean(att.mimeType && att.mimeType.startsWith('image/'));
-              return (
-                <div key={att.id} className="composer-attachment-pill">
-                  {isImage && att.previewUrl ? (
-                    <img
-                      src={att.previewUrl}
-                      alt={att.fileName}
-                      style={{ width: 16, height: 16, borderRadius: 3, objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <FileText size={13} style={{ color: 'var(--accent-light)' }} />
-                  )}
-                  <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {att.fileName}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                    ({(att.fileSize / 1024).toFixed(0)} KB)
-                  </span>
-                  <button
-                    className="composer-attachment-remove"
-                    onClick={() => onRemoveAttachment(att.id)}
-                    title="Remove attachment"
+          <div className="composer-attachments-area" data-testid="composer-attachments-area">
+            <div className="composer-attachments-header">
+              <span className="composer-attachment-counter" data-testid="attachment-counter">
+                {attachments.length}/{MAX_FILES} files
+              </span>
+              {isAnyFileProcessing && (
+                <span className="composer-processing-hint">
+                  <Loader2 size={12} className="spin-animation" />
+                  <span>Processing files...</span>
+                </span>
+              )}
+            </div>
+
+            <div className="composer-attachments">
+              {attachments.map((att) => {
+                const thumbSrc = att.thumbnailUrl || (att.previewUrl && att.previewUrl.startsWith('data:image/') ? att.previewUrl : undefined);
+                const isImage =
+                  att.kind === 'image' ||
+                  Boolean(thumbSrc) ||
+                  Boolean(att.mimeType && att.mimeType.startsWith('image/'));
+                const status = att.status || 'ready';
+
+                return (
+                  <div
+                    key={att.id}
+                    className={`composer-attachment-pill status-${status}`}
+                    data-testid="attachment-chip"
+                    data-status={status}
+                    title={
+                      att.errorMessage
+                        ? att.errorMessage
+                        : att.warnings && att.warnings.length > 0
+                        ? `${att.fileName} — ${att.warnings.join(' ')}`
+                        : att.fileName
+                    }
                   >
-                    <X size={13} />
-                  </button>
-                </div>
-              );
-            })}
+                    {status === 'processing' ? (
+                      <Loader2
+                        size={14}
+                        className="spin-animation"
+                        style={{ color: 'var(--accent-light)', flexShrink: 0 }}
+                        data-testid="attachment-spinner"
+                      />
+                    ) : status === 'error' ? (
+                      <AlertCircle
+                        size={14}
+                        style={{ color: 'var(--status-error)', flexShrink: 0 }}
+                      />
+                    ) : isImage && thumbSrc ? (
+                      <img
+                        src={thumbSrc}
+                        alt={att.fileName}
+                        className="composer-attachment-thumb"
+                        data-testid="attachment-thumbnail"
+                      />
+                    ) : (
+                      renderAttachmentIcon(att)
+                    )}
+
+                    <div className="composer-attachment-info">
+                      <span className="composer-attachment-name">{att.fileName}</span>
+                      <span className="composer-attachment-meta">
+                        {formatFileSize(att.fileSize)}
+                        {status === 'processing' && ' • Processing…'}
+                        {status === 'ready' && ' • Ready'}
+                        {status === 'error' && ' • Error'}
+                        {att.warnings && att.warnings.length > 0 && ` • ${att.warnings[0]}`}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="composer-attachment-remove"
+                      onClick={() => handleRemoveFile(att.id)}
+                      title={`Remove ${att.fileName}`}
+                      aria-label={`Remove ${att.fileName}`}
+                      data-testid="remove-attachment-btn"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* Upload error banner if any */}
-        {uploadError && (
-          <div style={{ color: 'var(--status-error)', fontSize: '12px', padding: '2px 4px' }}>
-            {uploadError}
+        {/* File Rejection / Validation Error Banner */}
+        {rejectionReasons.length > 0 && (
+          <div
+            className="composer-rejection-banner"
+            role="alert"
+            data-testid="upload-rejection-banner"
+          >
+            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div className="composer-rejection-list">
+              {rejectionReasons.map((reason, idx) => (
+                <div key={idx} className="composer-rejection-item">
+                  {reason}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="composer-voice-error-dismiss"
+              onClick={() => setRejectionReasons([])}
+              aria-label="Dismiss file warning"
+            >
+              <X size={13} />
+            </button>
           </div>
         )}
 
@@ -400,7 +669,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               <span className="recording-status-label">REC</span>
               <span className="recording-timer">{formatTimer(recordingSeconds)}</span>
 
-              {/* Animated Waveform Bars */}
               <div className="recording-waveform">
                 <span className="waveform-bar bar-1" />
                 <span className="waveform-bar bar-2" />
@@ -408,8 +676,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 <span className="waveform-bar bar-4" />
                 <span className="waveform-bar bar-5" />
               </div>
-
-
             </div>
 
             <div className="recording-actions-right">
@@ -444,29 +710,31 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         ) : (
           /* Single-row pill or multiline card layout */
           <div className={`composer-single-row ${isMultiLine ? 'is-multiline' : ''}`}>
-            {/* Hidden file input */}
+            {/* Hidden file input supporting desktop + mobile gallery/camera */}
             <input
               ref={fileInputRef}
               type="file"
               style={{ display: 'none' }}
               onChange={handleFileChange}
               multiple
-              accept=".pdf,.docx,.csv,.json,.txt,.md,.mp3,.wav,.m4a,.ogg,.flac,.webm,image/png,image/jpeg,image/webp,audio/*"
+              data-testid="file-upload-input"
+              accept="image/*,.heic,.heif,.pdf,.docx,.xlsx,.xls,.csv,.pptx,.txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.rb,.php,.html,.htm,.css,.scss,.sql,.sh,.yaml,.yml,.xml,.ini,.toml,.log"
             />
 
-            {/* Left '+' Attachment Button */}
+            {/* Left Paperclip Attachment Button */}
             <button
               type="button"
               className="composer-plus-btn"
               onClick={() => fileInputRef.current?.click()}
-              title="Add attachment"
-              aria-label="Add attachment"
-              disabled={isUploading || isRecording || isTranscribing}
+              title="Attach files or images (up to 20 files, 20 MB each)"
+              aria-label="Attach files"
+              data-testid="attach-file-btn"
+              disabled={isRecording || isTranscribing}
             >
-              {isUploading ? (
+              {isAnyFileProcessing ? (
                 <Loader2 size={18} className="spin-animation" />
               ) : (
-                <Plus size={19} />
+                <Paperclip size={18} />
               )}
             </button>
 
@@ -474,16 +742,21 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             <textarea
               ref={textareaRef}
               className="composer-textarea"
-              placeholder="Ask Madura AI..."
+              placeholder={
+                attachments.length > 0
+                  ? 'Add a message or press Send to analyze attached files...'
+                  : 'Ask Madura AI...'
+              }
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               rows={1}
+              data-testid="chat-input-textarea"
             />
 
             {/* Right Tools (Web Search, Mic, Send) */}
             <div className="composer-right-tools">
-              {/* Think Button (replaces Globe) */}
               <button
                 type="button"
                 className={`composer-tool-btn composer-think-btn ${forceSearch ? 'active' : ''}`}
@@ -496,7 +769,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 <span className="composer-think-label">Search</span>
               </button>
 
-              {/* Voice mic — white filled pill */}
               <button
                 type="button"
                 className="composer-voice-pill-btn"
@@ -520,6 +792,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                   onClick={onStopGeneration}
                   title="Stop generating"
                   aria-label="Stop generation"
+                  data-testid="stop-generation-btn"
                 >
                   <Square size={13} fill="currentColor" />
                 </button>
@@ -529,8 +802,13 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                   className="composer-send-btn"
                   onClick={handleSend}
                   disabled={!canSubmit}
-                  title="Send message"
+                  title={
+                    isAnyFileProcessing
+                      ? 'Please wait for files to finish processing'
+                      : 'Send message'
+                  }
                   aria-label="Send message"
+                  data-testid="send-message-btn"
                 >
                   <ArrowUp size={18} />
                 </button>
@@ -540,7 +818,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         )}
       </div>
 
-      {/* Bottom Bar below Chatbox: Model selector placed below the web search element */}
+      {/* Bottom Bar below Chatbox: Model selector */}
       {models && models.length > 0 && onSelectModel && (
         <div className="composer-bottom-bar">
           <div className="composer-bottom-spacer" />

@@ -47,7 +47,7 @@ export interface InteractiveDiagramProps {
   isStreaming?: boolean;
 }
 
-const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>> = {
+const ICON_MAP: Record<string, React.ComponentType<{ size?: number | string; className?: string; style?: React.CSSProperties }>> = {
   type: Type, cpu: Cpu, database: Database, zap: Zap, layers: Layers,
   'git-branch': GitBranch, code: Code, box: Box, 'arrow-right': ArrowRight,
   check: Check, settings: Settings, user: User, globe: Globe, file: FileText,
@@ -901,7 +901,7 @@ export const InteractiveDiagramComponent: React.FC<InteractiveDiagramProps> = ({
                 style={{ overflow: 'visible' }}
               >
                 <div
-                  xmlns="http://www.w3.org/1999/xhtml"
+                  {...({ xmlns: 'http://www.w3.org/1999/xhtml' } as React.HTMLAttributes<HTMLDivElement>)}
                   style={{ width: `${layout.CARD_W}px`, height: `${layout.CARD_H}px`, boxSizing: 'border-box' }}
                 >
                   <button

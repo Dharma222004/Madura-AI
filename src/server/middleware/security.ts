@@ -11,6 +11,10 @@ const WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS = 120; // 120 requests per minute
 
 export function rateLimiter(req: Request, res: Response, next: NextFunction): void {
+  if (!req.path.startsWith('/api')) {
+    next();
+    return;
+  }
   let ip = 'unknown';
   try {
     const forwarded = req.headers['x-forwarded-for'];
@@ -49,7 +53,9 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction): vo
 
 export function securityHeaders(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  if (req.path.startsWith('/api')) {
+    res.setHeader('X-Frame-Options', 'DENY');
+  }
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();

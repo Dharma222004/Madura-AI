@@ -201,6 +201,8 @@ export function streamChat(params: {
   model?: string;
   attachments?: Attachment[];
   enableSearch?: boolean;
+  memoryPrompt?: string;
+  memoryEnabled?: boolean;
   onToken: (token: string) => void;
   onThoughtToken?: (token: string) => void;
   onTitle?: (title: string, conversationId: string) => void;
@@ -226,6 +228,8 @@ export function streamChat(params: {
           model: params.model,
           attachments: params.attachments,
           enableSearch: params.enableSearch,
+          memoryPrompt: params.memoryPrompt,
+          memoryEnabled: params.memoryEnabled,
         }),
         signal: controller.signal,
       });
@@ -314,7 +318,14 @@ export function streamChat(params: {
       // Ensure that if the stream ended without an explicit done event, we complete cleanly
       if (!doneReceived && !controller.signal.aborted) {
         params.onDone({
-          conversation: { id: params.conversationId || '', title: 'Conversation', createdAt: Date.now(), updatedAt: Date.now() },
+          conversation: {
+            id: params.conversationId || '',
+            title: 'Conversation',
+            model: params.model || 'auto',
+            pinned: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
           assistantMessage: {
             id: `asst-${Date.now()}`,
             conversationId: params.conversationId || '',

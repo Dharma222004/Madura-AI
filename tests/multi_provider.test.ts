@@ -10,7 +10,7 @@ import { ChatService } from '../src/server/services/chat.service.js';
 import { DocumentService } from '../src/server/services/document.service.js';
 import { createApp } from '../src/server/app.js';
 
-const MISTRAL_MODEL = 'mistralai/mistral-large-4-1t-a52b';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 const messages = [{ role: 'user' as const, content: 'Say hello' }];
 
 function data(value: unknown): string {
@@ -37,7 +37,7 @@ function successfulResponse(text = 'Hello!'): Response {
   );
 }
 
-describe('Auto Mistral multi-provider gateway', () => {
+describe('Multi-provider gateway', () => {
   let temporaryDirectory: string | undefined;
 
   beforeEach(() => {
@@ -52,7 +52,7 @@ describe('Auto Mistral multi-provider gateway', () => {
     }
     vi.stubEnv('NVIDIA_MODEL', '');
     vi.stubEnv('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1');
-    vi.stubEnv('NVIDIA_API_KEY', 'nvapi-test-primary');
+    vi.stubEnv('GEMINI_API_KEY', 'gemini-test-primary');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
@@ -63,7 +63,7 @@ describe('Auto Mistral multi-provider gateway', () => {
     if (temporaryDirectory) {
       const cleanupTarget = path.resolve(temporaryDirectory);
       if (path.dirname(cleanupTarget) !== path.resolve(os.tmpdir()) ||
-          !path.basename(cleanupTarget).startsWith('madura-mistral-api-')) {
+          !path.basename(cleanupTarget).startsWith('madura-multi-api-')) {
         throw new Error('Unexpected test cleanup directory');
       }
       fs.rmSync(cleanupTarget, { recursive: true, force: true });
@@ -71,7 +71,7 @@ describe('Auto Mistral multi-provider gateway', () => {
     }
   });
 
-  it('sends Auto to Mistral Chat Completions and streams the complete answer', async () => {
+  it('sends Auto to default model Chat Completions and streams the complete answer while excluding removed models', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => successfulResponse());
     const provider = new MultiModelProvider();
     const chunks: string[] = [];
@@ -83,38 +83,43 @@ describe('Auto Mistral multi-provider gateway', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [endpoint, init] = fetchMock.mock.calls[0];
-    expect(endpoint).toBe('https://integrate.api.nvidia.com/v1/chat/completions');
+    expect(endpoint).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
     expect(JSON.parse(init!.body as string)).toEqual({
-      model: MISTRAL_MODEL,
+      model: DEFAULT_MODEL,
       messages,
       temperature: 0.25,
       max_tokens: 64,
       stream: true,
     });
     expect(init!.headers).toMatchObject({
-      Authorization: 'Bearer nvapi-test-primary',
+      Authorization: 'Bearer gemini-test-primary',
       Accept: 'text/event-stream',
     });
     expect(chunks.join('')).toBe('Hello!');
     expect(result.fullText).toBe('Hello!');
     expect(result.thought).toBeUndefined();
     expect(result.finishReason).toBe('stop');
-    expect((await provider.listModels()).find((model) => model.id === 'mistral-large-4'))
-      .toMatchObject({ name: 'Mistral Large 4' });
-    expect((await provider.listModels()).find((model) => model.id === 'auto')).toBeUndefined();
+    const listedModels = await provider.listModels();
+    expect(listedModels.find((model) => model.id === 'gemini-flash'))
+      .toMatchObject({ name: 'Gemini 2.5 Flash' });
+    expect(listedModels.find((model) => model.id === 'mistral-large-4')).toBeUndefined();
+    expect(listedModels.find((model) => model.id === 'deepseek-v4.1-flash')).toBeUndefined();
+    expect(listedModels.find((model) => model.id === 'glm-5.3-flash')).toBeUndefined();
+    expect(listedModels.find((model) => model.id === 'xingchen')).toBeUndefined();
+    expect(listedModels.find((model) => model.id === 'auto')).toBeUndefined();
   });
 
-  it.each(['default', 'gpt-oss-20b', 'openai/gpt-oss-20b', MISTRAL_MODEL])(
-    'routes the model identifier %s to the new Auto backend',
+  it.each(['default', 'gpt-oss-20b', 'openai/gpt-oss-20b', DEFAULT_MODEL])(
+    'routes the model identifier %s to the default backend',
     (modelId) => {
-      expect(new MultiModelProvider().getModelConfig(modelId).realModel).toBe(MISTRAL_MODEL);
+      expect(new MultiModelProvider().getModelConfig(modelId).realModel).toBe(DEFAULT_MODEL);
     }
   );
 
-  it('keeps an explicitly configured NVIDIA model override', () => {
-    vi.stubEnv('NVIDIA_MODEL', 'mistralai/custom-deployment');
-    expect(new MultiModelProvider().getModelConfig('auto').realModel)
-      .toBe('mistralai/custom-deployment');
+  it('keeps an explicitly configured NVIDIA model override on nvidia-ultron', () => {
+    vi.stubEnv('NVIDIA_MODEL', 'nvidia/custom-deployment');
+    expect(new MultiModelProvider().getModelConfig('nvidia-ultron').realModel)
+      .toBe('nvidia/custom-deployment');
   });
 
   it('reconstructs fragmented UTF-8 and SSE lines, including the final line without a newline', async () => {
@@ -148,8 +153,8 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(result.finishReason).toBe('length');
   });
 
-  it('rotates a rate-limited NVIDIA key and keeps the working key for later requests', async () => {
-    vi.stubEnv('NVIDIA_API_KEYS', 'nvapi-test-primary,nvapi-test-secondary');
+  it('rotates a rate-limited provider key and keeps the working key for later requests', async () => {
+    vi.stubEnv('GEMINI_API_KEYS', 'gemini-test-primary,gemini-test-secondary');
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Rate limit reached' } }), { status: 429 }))
       .mockImplementation(async () => successfulResponse());
@@ -160,13 +165,13 @@ describe('Auto Mistral multi-provider gateway', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.map(([, init]) => (init!.headers as Record<string, string>).Authorization))
-      .toEqual(['Bearer nvapi-test-primary', 'Bearer nvapi-test-secondary', 'Bearer nvapi-test-secondary']);
-    expect(fetchMock.mock.calls.every(([, init]) => JSON.parse(init!.body as string).model === MISTRAL_MODEL))
+      .toEqual(['Bearer gemini-test-primary', 'Bearer gemini-test-secondary', 'Bearer gemini-test-secondary']);
+    expect(fetchMock.mock.calls.every(([, init]) => JSON.parse(init!.body as string).model === DEFAULT_MODEL))
       .toBe(true);
   });
 
   it('fails promptly when no provider keys exist instead of entering a fallback cycle', async () => {
-    vi.stubEnv('NVIDIA_API_KEY', '');
+    vi.stubEnv('GEMINI_API_KEY', '');
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 
     await expect(new MultiModelProvider().streamChat({ model: 'auto', messages }, () => {}))
@@ -186,8 +191,8 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('bounds cross-provider retries when both Auto and Gemini fail authorization', async () => {
-    vi.stubEnv('GEMINI_API_KEY', 'gemini-test-key');
+  it('bounds cross-provider retries when both primary and fallback providers fail authorization', async () => {
+    vi.stubEnv('GROQ_API_KEY', 'groq-test-key');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ error: { message: 'Authorization failed' } }), { status: 403 })
     );
@@ -198,13 +203,13 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(4);
     expect(new Set(fetchMock.mock.calls.map(([, init]) => JSON.parse(init!.body as string).model)))
-      .toEqual(new Set([MISTRAL_MODEL, 'gemini-2.5-flash']));
+      .toEqual(new Set([DEFAULT_MODEL, 'qwen/qwen3.8-27b']));
   });
 
-  it('uses a working cross-provider response after Auto produces no visible content', async () => {
-    vi.stubEnv('GEMINI_API_KEY', 'gemini-test-key');
+  it('uses a working cross-provider response after primary produces no visible content', async () => {
+    vi.stubEnv('GROQ_API_KEY', 'groq-test-key');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_endpoint, init) =>
-      JSON.parse(init!.body as string).model === MISTRAL_MODEL
+      JSON.parse(init!.body as string).model === DEFAULT_MODEL
         ? sseResponse('data: [DONE]\n\n')
         : successfulResponse('A fallback answer')
     );
@@ -214,14 +219,14 @@ describe('Auto Mistral multi-provider gateway', () => {
 
     expect(chunks.join('')).toBe('A fallback answer');
     expect(result.fullText).toBe('A fallback answer');
-    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1]!.body as string).model).toBe('gemini-2.5-flash');
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1]!.body as string).model).toBe('qwen/qwen3.8-27b');
     expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
   it.each([
     ['an empty stream', ': keepalive\n\ndata: [DONE]\n\n'],
-    ['an embedded API error', data({ error: { message: 'Mistral generation failed' } })],
-    ['a failed completion', data({ choices: [{ delta: {}, finish_reason: 'error', message: { content: 'Mistral generation failed' } }] })],
+    ['an embedded API error', data({ error: { message: 'Model generation failed' } })],
+    ['a failed completion', data({ choices: [{ delta: {}, finish_reason: 'error', message: { content: 'Model generation failed' } }] })],
   ])('rejects %s instead of returning a successful blank answer', async (_description, wire) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse(wire));
     const chunks: string[] = [];
@@ -234,23 +239,23 @@ describe('Auto Mistral multi-provider gateway', () => {
   });
 
   it('propagates an error after visible content without appending a retry or fallback answer', async () => {
-    vi.stubEnv('NVIDIA_API_KEYS', 'nvapi-test-primary,nvapi-test-secondary');
-    vi.stubEnv('GEMINI_API_KEY', 'gemini-test-key');
+    vi.stubEnv('GEMINI_API_KEYS', 'gemini-test-primary,gemini-test-secondary');
+    vi.stubEnv('GROQ_API_KEY', 'groq-test-key');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse(
       data({ choices: [{ delta: { content: 'A partial answer' } }] }) +
-      data({ error: { message: 'Mistral stream disconnected' } })
+      data({ error: { message: 'Stream disconnected' } })
     ));
     const chunks: string[] = [];
 
     await expect(new MultiModelProvider().streamChat({ model: 'auto', messages }, (chunk) => chunks.push(chunk)))
-      .rejects.toThrow(/Mistral stream disconnected/);
+      .rejects.toThrow(/Stream disconnected/);
 
     expect(chunks.join('')).toBe('A partial answer');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('delivers and persists an Auto API answer with local mock fallback disabled', async () => {
-    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madura-mistral-api-'));
+    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madura-multi-api-'));
     const storage = new FileStore(temporaryDirectory);
     await storage.init();
     await storage.saveSettings({ model: 'auto', useMockFallback: false });
@@ -281,12 +286,12 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(done.assistantMessage).toMatchObject({ content: 'Vanakkam!', status: 'completed' });
     expect(await storage.getMessages(done.conversation.id))
       .toContainEqual(expect.objectContaining({ role: 'assistant', content: 'Vanakkam!', status: 'completed' }));
-    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).model).toBe(MISTRAL_MODEL);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).model).toBe(DEFAULT_MODEL);
     expect(localFallback).not.toHaveBeenCalled();
   });
 
   it('retains a failed partial API answer without appending local fallback content', async () => {
-    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madura-mistral-api-'));
+    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'madura-multi-api-'));
     const storage = new FileStore(temporaryDirectory);
     await storage.init();
     await storage.saveSettings({ model: 'auto', useMockFallback: true });
@@ -295,7 +300,7 @@ describe('Auto Mistral multi-provider gateway', () => {
     const localFallback = vi.spyOn(mockProvider, 'streamChat');
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse(
       data({ choices: [{ delta: { content: 'A partial answer' } }] }) +
-      data({ error: { message: 'Mistral stream disconnected' } })
+      data({ error: { message: 'Stream disconnected' } })
     ));
     const chatService = new ChatService(storage, provider, mockProvider, undefined, true);
     const app = createApp({
@@ -315,7 +320,7 @@ describe('Auto Mistral multi-provider gateway', () => {
     expect(done.assistantMessage).toMatchObject({
       content: 'A partial answer',
       status: 'failed',
-      errorMessage: expect.stringContaining('Mistral stream disconnected'),
+      errorMessage: expect.stringContaining('Stream disconnected'),
     });
     expect(await storage.getMessages(done.conversation.id))
       .toContainEqual(expect.objectContaining({ role: 'assistant', content: 'A partial answer', status: 'failed' }));

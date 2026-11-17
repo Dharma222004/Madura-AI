@@ -38,6 +38,20 @@ export const App: React.FC = () => {
   // Suggested prompt draft buffer
   const [composerDraft, setComposerDraft] = useState('');
 
+  // Non-intrusive "Memory updated" toast state
+  const [memoryNotice, setMemoryNotice] = useState<string | null>(null);
+  const memoryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerMemoryNotice = (notice: string = 'Memory updated') => {
+    setMemoryNotice(notice);
+    if (memoryNoticeTimerRef.current) {
+      clearTimeout(memoryNoticeTimerRef.current);
+    }
+    memoryNoticeTimerRef.current = setTimeout(() => {
+      setMemoryNotice(null);
+    }, 2800);
+  };
+
   // Scroll to bottom visibility
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const chatViewportRef = useRef<HTMLDivElement>(null);
@@ -101,6 +115,7 @@ export const App: React.FC = () => {
     regenerateResponse,
     editAndResubmit,
     addAttachment,
+    updateAttachment,
     removeAttachment,
   } = useChat(
     activeConversationId,
@@ -111,6 +126,9 @@ export const App: React.FC = () => {
     },
     (id, title) => {
       updateLocalTitle(id, title);
+    },
+    (notice) => {
+      triggerMemoryNotice(notice);
     }
   );
 
@@ -309,6 +327,13 @@ export const App: React.FC = () => {
           onCycleTheme={handleCycleTheme}
         />
 
+        {memoryNotice && (
+          <div className="memory-toast-notice" role="status" aria-live="polite" data-testid="memory-toast-notice">
+            <Check size={13} />
+            <span>{memoryNotice}</span>
+          </div>
+        )}
+
         {/* Chat Viewport or Centered Empty State (ChatGPT structure) */}
         {messages.length === 0 ? (
           <div className="empty-chat-viewport">
@@ -324,6 +349,7 @@ export const App: React.FC = () => {
                   enterToSend={settings.enterToSend}
                   attachments={attachments}
                   initialDraft={composerDraft}
+                  activeConversationId={activeConversationId}
                   onSendMessage={(content, enableSearch) => {
                     userScrolledUpRef.current = false;
                     isUserInteractingRef.current = false;
@@ -333,6 +359,7 @@ export const App: React.FC = () => {
                   }}
                   onStopGeneration={stopGeneration}
                   onAddAttachment={addAttachment}
+                  onUpdateAttachment={updateAttachment}
                   onRemoveAttachment={removeAttachment}
                   models={models}
                   selectedModel={settings.model || (models[0]?.id ?? '')}
@@ -380,6 +407,7 @@ export const App: React.FC = () => {
                 enterToSend={settings.enterToSend}
                 attachments={attachments}
                 initialDraft={composerDraft}
+                activeConversationId={activeConversationId}
                 onSendMessage={(content, enableSearch) => {
                   userScrolledUpRef.current = false;
                   isUserInteractingRef.current = false;
@@ -394,6 +422,7 @@ export const App: React.FC = () => {
                 }}
                 onStopGeneration={stopGeneration}
                 onAddAttachment={addAttachment}
+                onUpdateAttachment={updateAttachment}
                 onRemoveAttachment={removeAttachment}
                 models={models}
                 selectedModel={settings.model || (models[0]?.id ?? '')}
@@ -417,6 +446,7 @@ export const App: React.FC = () => {
         }}
         onSaveSettings={handleSaveSettings}
         onClearAllHistory={clearAll}
+        onMemoryToast={triggerMemoryNotice}
       />
 
       {/* Delete Conversation Confirmation Modal */}

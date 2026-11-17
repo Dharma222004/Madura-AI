@@ -1,9 +1,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import path from 'path';
+import fs from 'fs';
+import express from 'express';
 import { getApp } from './init.js';
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function bootstrap() {
   console.log('----------------------------------------------------');
@@ -12,8 +15,29 @@ async function bootstrap() {
 
   const app = await getApp();
 
-  const server = app.listen(PORT, () => {
-    console.log(`[Server] Madura AI backend active on http://localhost:${PORT}`);
+  if (process.env.NODE_ENV !== 'production') {
+    const vitePkg = 'vite';
+    const { createServer: createViteServer } = await import(vitePkg);
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const clientDist = path.resolve(process.cwd(), 'dist/client');
+    if (fs.existsSync(clientDist)) {
+      app.use(express.static(clientDist));
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+          return next();
+        }
+        res.sendFile(path.join(clientDist, 'index.html'));
+      });
+    }
+  }
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Madura AI active on http://0.0.0.0:${PORT}`);
     console.log(`[Models] Auto (default) | Gemini 2.5 Flash | Qwen 3.8 | GPT-OSS-120B | Ultron`);
   });
 

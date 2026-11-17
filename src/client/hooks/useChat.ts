@@ -1,12 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Conversation, Message, Attachment } from '../../types/index.js';
 import * as api from '../services/api.js';
+import {
+  isMemoryEnabled,
+  extractMemory,
+  upsertMemory,
+  getRelevantMemory,
+  buildMemoryPrompt,
+  handleForgetCommand,
+} from '../memory.js';
+import {
+  cacheAttachmentsForSession,
+  hydrateMessageAttachments,
+} from '../services/attachmentStore.js';
 
 export function useChat(
   activeConversationId: string | null,
   activeModel: string,
   onConversationCreated?: (conv: Conversation) => void,
-  onTitleUpdated?: (id: string, title: string) => void
+  onTitleUpdated?: (id: string, title: string) => void,
+  onMemoryUpdated?: (notice: string) => void
 ) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -85,7 +98,11 @@ export function useChat(
     api.fetchConversation(activeConversationId)
       .then(conv => {
         if (isMounted) {
-          setMessages(conv.messages || []);
+          const hydrated = (conv.messages || []).map(msg => ({
+            ...msg,
+            attachments: hydrateMessageAttachments(msg.attachments),
+          }));
+          setMessages(hydrated);
         }
       })
       .catch(err => {
@@ -136,14 +153,49 @@ export function useChat(
 
   const sendMessage = useCallback(
     async (content: string, overrideAttachments?: Attachment[], enableSearch?: boolean) => {
-      if (!content.trim() && (!overrideAttachments || overrideAttachments.length === 0)) {
+      const rawAttachments = overrideAttachments || attachments;
+      const activeAttachments = rawAttachments.filter(
+        (a) => a.status !== 'processing' && a.status !== 'error'
+      );
+      if (!content.trim() && activeAttachments.length === 0) {
         return;
       }
 
       setError(null);
       setIsSearching(false);
-      const activeAttachments = overrideAttachments || attachments;
       setAttachments([]); // Clear composer attachments
+
+      if (activeAttachments.length > 0) {
+        cacheAttachmentsForSession(activeAttachments, activeConversationId);
+      }
+
+      // Cross-chat memory extraction, forget handling, and prompt injection
+      const memoryEnabled = isMemoryEnabled();
+      let memoryPrompt = '';
+
+      if (memoryEnabled && content.trim()) {
+        const forgetResult = handleForgetCommand(content);
+        if (forgetResult.isForgetCommand) {
+          if (forgetResult.clearedAll || forgetResult.deletedItems.length > 0) {
+            onMemoryUpdated?.('Memory updated');
+          }
+        } else {
+          const extractedFacts = extractMemory(content);
+          let memoryChanged = false;
+          for (const fact of extractedFacts) {
+            const upserted = upsertMemory(fact);
+            if (upserted && (upserted.created || upserted.updated)) {
+              memoryChanged = true;
+            }
+          }
+          if (memoryChanged) {
+            onMemoryUpdated?.('Memory updated');
+          }
+        }
+
+        const relevantItems = getRelevantMemory(content);
+        memoryPrompt = buildMemoryPrompt(relevantItems);
+      }
 
       // Reset stream buffers
       streamBufferRef.current = { content: '', thought: '' };
@@ -185,6 +237,8 @@ export function useChat(
         model: activeModel,
         attachments: activeAttachments,
         enableSearch,
+        memoryPrompt,
+        memoryEnabled,
         onSearchStart: (searchQuery) => {
           setIsSearching(true);
           setMessages(prev =>
@@ -228,6 +282,9 @@ export function useChat(
 
           // If this was a new conversation, notify parent
           if (!activeConversationId && onConversationCreated && data?.conversation?.id) {
+            if (activeAttachments.length > 0) {
+              cacheAttachmentsForSession(activeAttachments, data.conversation.id);
+            }
             onConversationCreated(data.conversation);
           }
 
@@ -273,7 +330,7 @@ export function useChat(
 
       abortControllerRef.current = controller;
     },
-    [activeConversationId, activeModel, attachments, onConversationCreated, onTitleUpdated, flushStreamBuffer, scheduleFlush]
+    [activeConversationId, activeModel, attachments, onConversationCreated, onTitleUpdated, onMemoryUpdated, flushStreamBuffer, scheduleFlush]
   );
 
   const regenerateResponse = useCallback(
@@ -306,13 +363,19 @@ export function useChat(
     [sendMessage]
   );
 
-  const addAttachment = (att: Attachment) => {
+  const addAttachment = useCallback((att: Attachment) => {
     setAttachments(prev => [...prev, att]);
-  };
+  }, []);
 
-  const removeAttachment = (id: string) => {
+  const updateAttachment = useCallback((id: string, patch: Partial<Attachment>) => {
+    setAttachments(prev =>
+      prev.map(a => (a.id === id ? { ...a, ...patch } : a))
+    );
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
-  };
+  }, []);
 
   return {
     messages,
@@ -326,6 +389,7 @@ export function useChat(
     regenerateResponse,
     editAndResubmit,
     addAttachment,
+    updateAttachment,
     removeAttachment,
     clearError: () => setError(null),
   };

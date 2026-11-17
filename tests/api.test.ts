@@ -128,7 +128,7 @@ describe('Madura AI API Endpoints', () => {
     const chatService = new ChatService(storage, new MockProvider(), new MockProvider(), new SearchService(), true);
     const { assistantMessage } = await chatService.handleUserMessage({
       messageContent: 'Tell me about NVIDIA GPUs and Jensen Huang',
-      model: 'mistral-large-4',
+      model: 'gemini-flash',
     });
     expect(assistantMessage.content).not.toContain('CEO of Madura AI');
     expect(assistantMessage.content).not.toContain('Madura AI GPUs');
