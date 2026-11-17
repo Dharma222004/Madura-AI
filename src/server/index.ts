@@ -15,7 +15,16 @@ async function bootstrap() {
 
   const app = await getApp();
 
-  if (process.env.NODE_ENV !== 'production') {
+  const clientDist = path.resolve(process.cwd(), 'dist/client');
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
+  } else if (process.env.VITE_MIDDLEWARE === 'true') {
     const vitePkg = 'vite';
     const { createServer: createViteServer } = await import(vitePkg);
     const vite = await createViteServer({
@@ -23,17 +32,6 @@ async function bootstrap() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const clientDist = path.resolve(process.cwd(), 'dist/client');
-    if (fs.existsSync(clientDist)) {
-      app.use(express.static(clientDist));
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) {
-          return next();
-        }
-        res.sendFile(path.join(clientDist, 'index.html'));
-      });
-    }
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
