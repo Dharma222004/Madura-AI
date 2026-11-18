@@ -1,7 +1,18 @@
 import { Conversation, Message, UserSettings, ModelInfo, Attachment, SearchSource, UserMemory } from '../../types/index.js';
 import { getCurrentToken, getCurrentUserId } from './supabase.js';
 
-const API_BASE = '/api';
+// Smart API base: in Android WebView use full server IP, in browser use relative path
+const API_BASE: string = (() => {
+  if (typeof window === 'undefined') return '/api';
+  // Use injected base from index.html (set at runtime for Android/Capacitor)
+  if ((window as any).__API_BASE__) return (window as any).__API_BASE__;
+  const ua = navigator.userAgent || '';
+  const isAndroid = /android/i.test(ua);
+  const isCapacitor =
+    window.location.protocol === 'capacitor:' ||
+    (window.location.hostname === 'localhost' && isAndroid);
+  return isCapacitor || isAndroid ? 'http://10.62.19.85:3001/api' : '/api';
+})();
 
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
