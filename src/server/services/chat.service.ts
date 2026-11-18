@@ -514,7 +514,8 @@ Guidelines:
           const sourcesText = searchData.results
             .map((r, idx) => {
               const domain = (() => { try { return new URL(r.url).hostname.replace('www.', ''); } catch { return r.url; } })();
-              return `[${idx + 1}] **${r.title}** — *${domain}*\nURL: ${r.url}\n${r.snippet.slice(0, 800)}`;
+              const snippet = (r.snippet || '').slice(0, 800);
+              return `[${idx + 1}] **${r.title}** — *${domain}*\nURL: ${r.url}\n${snippet}`;
             })
             .join('\n\n---\n\n');
 

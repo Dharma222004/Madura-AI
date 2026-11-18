@@ -4333,3 +4333,23 @@
 .composer-send-btn {
   transition: all var(--transition-fast);
 }
+
+/* Ensure text in chat messages is fully selectable and copyable on mobile */
+.message-content,
+.message-bubble,
+.message-item,
+.markdown-body,
+.markdown-body p,
+.markdown-body pre,
+.markdown-body code,
+.markdown-body span {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* Mobile safe area handling */
+.app-container {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+

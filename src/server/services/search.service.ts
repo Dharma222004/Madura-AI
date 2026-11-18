@@ -216,13 +216,19 @@ export class SearchService {
 
     // Find the first line with strong domain/topic keywords
     for (const line of lines) {
-      if (/^(web\s+search|step\s*\d|data\s+collection|primary\s+sources?|collect:|fetch:|run\s+first)/i.test(line)) continue;
-      if (/\b(fetch|market|price|index|nifty|sensex|stock|gold|silver|weather|score|news|latest|today|data|search|find)\b/i.test(line)) {
-        const cleaned = line
-          .replace(/^(web\s+search\s*(step\s*\d+)?\s*[\u2014\-\u2013:]*\s*)/i, '')
-          .replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|fetch|find|look\s+up|get)\s+/i, '')
-          .trim();
-        if (cleaned.length > 10) return cleaned.slice(0, 120);
+      if (/^step\s*\d/i.test(line) || /data\s+(collection|fetching)/i.test(line) || /^primary\s+sources?/i.test(line) || /^collect\s*:/i.test(line)) continue;
+      if (/^fetch\s+the\s+following\s*:?\s*$/i.test(line)) continue;
+
+      const stripped = line
+        .replace(/^(web\s+search\s*[:\u2014\-]*\s*)/i, '')
+        .replace(/^(please\s+)?(can\s+you\s+)?(search(\s+the\s+web|\s+online)?\s+for|fetch(\s+the\s+following)?|find|look\s+up|get)\s+/i, '')
+        .trim();
+
+      if (/\b(weather|temperature|delhi|forecast|rainfall|crypto|bitcoin|btc|ethereum|eth|nifty|sensex|stock|market|price|index|gold|silver|score|news|latest|today|data)\b/i.test(stripped)) {
+        const cleaned = stripped.replace(/[:\u2014\-]+$/, '').trim();
+        if (cleaned.length >= 6 && !/^(the following|information|details)/i.test(cleaned)) {
+          return cleaned.slice(0, 120);
+        }
       }
     }
 
@@ -272,7 +278,7 @@ export class SearchService {
 
     // Always search for leadership/current-event queries
     if ([
-      'prime minister', 'president of', 'chief minister', 'chancellor of', 'finance minister',
+      'prime minister', 'president', 'president of', 'us president', 'potus', 'chief minister', 'chancellor of', 'finance minister',
       'foreign minister', 'ceo of', 'who is the ceo', 'who is the current', 'who runs', 'who leads',
       'secretary of state', 'governor of', 'vice president', 'head of state',
     ].some(k => clean.includes(k))) return true;

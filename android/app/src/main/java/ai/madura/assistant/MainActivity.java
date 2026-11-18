@@ -20,29 +20,29 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Install splash screen BEFORE super.onCreate for proper API 31+ splash
+        // Install Android 12+ SplashScreen
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
 
         super.onCreate(savedInstanceState);
 
-        // Keep splash screen visible until WebView finishes loading
+        // Keep native splash screen visible briefly, allowing web view to render
         splashScreen.setKeepOnScreenCondition(() -> false);
 
-        // Edge-to-edge layout: let app draw behind status bar + nav bar
+        // Edge-to-edge layout: app draws behind status and navigation bars
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
-        // Make status bar + nav bar transparent so app content shows through
+        // Transparent system bars for clean immersion
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
 
-        // Force white (light) status bar icons so they are visible on dark bg
+        // Dark theme: force light (white) status and navigation bar icons
         WindowInsetsControllerCompat wic = new WindowInsetsControllerCompat(
             getWindow(), getWindow().getDecorView()
         );
-        wic.setAppearanceLightStatusBars(false);    // white icons on dark background
-        wic.setAppearanceLightNavigationBars(false); // white nav icons on dark background
+        wic.setAppearanceLightStatusBars(false);
+        wic.setAppearanceLightNavigationBars(false);
 
-        // Request runtime permissions for Camera, Microphone & Media
+        // Request runtime permissions for Camera, Microphone & Storage/Media
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             java.util.List<String> permsNeeded = new java.util.ArrayList<>();
 
@@ -54,7 +54,7 @@ public class MainActivity extends BridgeActivity {
                     != PackageManager.PERMISSION_GRANTED) {
                 permsNeeded.add(Manifest.permission.RECORD_AUDIO);
             }
-            // Android 13+ (TIRAMISU) uses READ_MEDIA_IMAGES for gallery/screenshot access
+            // Android 13+ (TIRAMISU) uses READ_MEDIA_IMAGES for gallery/photos
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
                         != PackageManager.PERMISSION_GRANTED) {
@@ -84,7 +84,7 @@ public class MainActivity extends BridgeActivity {
             WebView webView = bridge.getWebView();
             WebSettings settings = webView.getSettings();
 
-            // Enable all storage for local asset mode
+            // Enable local storage, DOM storage, database access
             settings.setDomStorageEnabled(true);
             settings.setDatabaseEnabled(true);
             settings.setAllowFileAccess(true);
@@ -93,37 +93,48 @@ public class MainActivity extends BridgeActivity {
             settings.setAllowUniversalAccessFromFileURLs(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
 
-            // Enable JavaScript (required by React app)
+            // Enable JavaScript execution
             settings.setJavaScriptEnabled(true);
 
-            // High render priority for smooth performance
+            // High rendering priority for smooth 60fps scrolling
             settings.setRenderPriority(WebSettings.RenderPriority.HIGH);
 
-            // Enable text selection, copy, paste in the WebView
+            // Enable remote debugging of WebView via chrome://inspect
+            WebView.setWebContentsDebuggingEnabled(true);
+
+            // Allow Mixed Content (HTTPS WebView connecting to HTTP local server)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            }
+
+            // Enable text selection and copy-paste in WebView
             webView.setLongClickable(true);
 
-            // Clean up user-agent (remove "; wv" so sites treat it as a real browser)
+            // Clean User-Agent
             String defaultUA = settings.getUserAgentString();
-            settings.setUserAgentString(defaultUA.replace("; wv", ""));
+            if (defaultUA != null) {
+                settings.setUserAgentString(defaultUA.replace("; wv", ""));
+            }
 
-            // Suppress URL context menus ONLY on links/anchors.
-            // Allow long-press on plain text so copy/paste works normally.
+            // Suppress link/anchor popup context menus, but PRESERVE text selection for copy-paste
             webView.setOnLongClickListener(new View.OnLongClickListener() {
                 @Override
                 public boolean onLongClick(View v) {
                     WebView.HitTestResult result = ((WebView) v).getHitTestResult();
                     if (result != null) {
                         int type = result.getType();
+                        // Only suppress link/anchor preview popups
                         if (type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
                             type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                            return true; // suppress link/anchor URL popup
+                            return true;
                         }
                     }
-                    return false; // allow text selection & copy/paste
+                    // Return false to allow default Android text selection & copy-paste toolbar
+                    return false;
                 }
             });
 
-            // Hide scrollbars for a cleaner native-app look
+            // Hide scrollbars for native app appearance
             webView.setVerticalScrollBarEnabled(false);
             webView.setHorizontalScrollBarEnabled(false);
         }
@@ -141,6 +152,5 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        // Bridge handles re-requesting if needed
     }
 }

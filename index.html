@@ -1,31 +1,261 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d0d0d" />
   <title>Madura AI</title>
-  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=madura-logo-2" />
-  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=madura-logo-2" />
-  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png?v=madura-logo-2" />
+  <link rel="shortcut icon" type="image/x-icon" href="./favicon.ico?v=madura-logo-2" />
+  <link rel="apple-touch-icon" href="./logo.png" />
 
-  <!-- Google Fonts: Inter & JetBrains Mono -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
-    rel="stylesheet" />
+  <style>
+    :root {
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
 
-  <!-- KaTeX CSS for LaTeX math rendering -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  <!-- Highlight.js Theme for code syntax highlighting -->
-  <link rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css" />
+    html, body {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      background-color: #000000;
+      color: #ffffff;
+      font-family: var(--font-sans);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Safe-area insets for mobile edge-to-edge screens */
+    #root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* In-DOM Initial Splash Screen (Zero-flash instant render) */
+    .app-initial-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justifyContent: center;
+      background: radial-gradient(circle at center, #111118 0%, #000000 100%);
+      color: #ffffff;
+      z-index: 99999;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .splash-logo-container {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .splash-glow-ring {
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
+      animation: splash-spin 2.5s linear infinite;
+      filter: blur(10px);
+      opacity: 0.6;
+    }
+
+    .splash-logo-circle {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background-color: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+
+    .splash-logo-circle img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+
+    .splash-app-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .splash-subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 28px;
+    }
+
+    .splash-spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: splash-spin 0.8s linear infinite;
+    }
+
+    .splash-diagnostic-box {
+      display: none;
+      margin-top: 24px;
+      max-width: 380px;
+      width: 100%;
+      background-color: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: left;
+    }
+
+    .splash-diagnostic-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f87171;
+      margin-bottom: 8px;
+    }
+
+    .splash-diagnostic-msg {
+      font-size: 11px;
+      color: #a1a1aa;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+
+    .splash-btn {
+      display: inline-block;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+
+    @keyframes splash-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+
+  <!-- Startup Diagnostic & Exception Logger (Early Initialization) -->
+  <script>
+    (function() {
+      window.__STARTUP_LOGS__ = [{
+        type: 'INIT',
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        protocol: window.location.protocol,
+        origin: window.location.origin
+      }];
+
+      window.addEventListener('error', function(e) {
+        var errInfo = {
+          type: 'UNCAUGHT_ERROR',
+          message: e.message,
+          filename: e.filename,
+          lineno: e.lineno,
+          colno: e.colno,
+          stack: e.error ? e.error.stack : null,
+          timestamp: new Date().toISOString()
+        };
+        window.__STARTUP_LOGS__.push(errInfo);
+        console.error('[Madura Startup Error]', errInfo);
+        showDiagnostic(errInfo.message + (errInfo.filename ? ' (' + errInfo.filename + ':' + errInfo.lineno + ')' : ''));
+      });
+
+      window.addEventListener('unhandledrejection', function(e) {
+        var errInfo = {
+          type: 'UNHANDLED_REJECTION',
+          reason: e.reason ? (e.reason.message || String(e.reason)) : 'Unknown rejection',
+          stack: e.reason && e.reason.stack ? e.reason.stack : null,
+          timestamp: new Date().toISOString()
+        };
+        window.__STARTUP_LOGS__.push(errInfo);
+        console.error('[Madura Unhandled Rejection]', errInfo);
+      });
+
+      function showDiagnostic(msg) {
+        var box = document.getElementById('splash-diag-box');
+        var msgEl = document.getElementById('splash-diag-msg');
+        var spinner = document.getElementById('splash-spinner');
+        if (box && msgEl) {
+          msgEl.textContent = msg || 'Application failed to start.';
+          box.style.display = 'block';
+          if (spinner) spinner.style.display = 'none';
+        }
+      }
+
+      // Safety watchdog: if React doesn't mount in 8 seconds, show diagnostics
+      setTimeout(function() {
+        if (!window.__REACT_MOUNTED__) {
+          var lastLog = window.__STARTUP_LOGS__[window.__STARTUP_LOGS__.length - 1];
+          var msg = (lastLog && lastLog.message)
+            ? lastLog.message
+            : 'Taking longer than expected to load bundled assets. Check device connection.';
+          showDiagnostic(msg);
+        }
+      }, 8000);
+    })();
+  </script>
 </head>
 
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <!-- Instant Native-Look Splash Screen (Replaced when React mounts) -->
+    <div class="app-initial-splash" id="app-initial-splash">
+      <div class="splash-logo-container">
+        <div class="splash-glow-ring"></div>
+        <div class="splash-logo-circle">
+          <img src="./favicon.png" alt="Madura AI" onerror="this.style.display='none'" />
+        </div>
+      </div>
+      <h1 class="splash-app-title">Madura AI</h1>
+      <p class="splash-subtitle">Personal Intelligence Assistant</p>
+      <div class="splash-spinner" id="splash-spinner"></div>
+
+      <div class="splash-diagnostic-box" id="splash-diag-box">
+        <div class="splash-diagnostic-title">Startup Notice</div>
+        <div class="splash-diagnostic-msg" id="splash-diag-msg">Initializing application components...</div>
+        <div>
+          <button class="splash-btn" onclick="window.location.reload()">Reload App</button>
+          <button class="splash-btn" style="background-color: #3f3f46;" onclick="localStorage.clear(); window.location.reload()">Clear Cache</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/src/client/index.tsx"></script>
 </body>
 

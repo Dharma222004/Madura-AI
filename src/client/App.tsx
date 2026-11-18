@@ -10,7 +10,7 @@ import { useConversations } from './hooks/useConversations.js';
 import { useChat } from './hooks/useChat.js';
 import { UserSettings, ModelInfo } from '../types/index.js';
 import * as api from './services/api.js';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, AlertCircle } from 'lucide-react';
 
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Madura User',
@@ -75,8 +75,20 @@ export const App: React.FC = () => {
     addOrUpdateConversation,
   } = useConversations(activeConversationId, setActiveConversationId);
 
+  // Server connection status (null = unknown, true = connected, false = offline)
+  const [isServerConnected, setIsServerConnected] = useState<boolean | null>(null);
+
   // Load models and settings
   useEffect(() => {
+    let isMounted = true;
+
+    // Check server connection
+    api.testConnection().then(res => {
+      if (isMounted) setIsServerConnected(res.ok);
+    }).catch(() => {
+      if (isMounted) setIsServerConnected(false);
+    });
+
     Promise.all([
       api.fetchSettings().catch(err => {
         console.error('Failed to load settings:', err);
@@ -84,15 +96,19 @@ export const App: React.FC = () => {
       }),
       api.fetchModels().catch(err => {
         console.error('Failed to load models:', err);
-        return [] as ModelInfo[];
+        return api.DEFAULT_OFFLINE_MODELS;
       }),
     ]).then(([s, m]) => {
-      setModels(m);
-      const chosenModel = (s.model && s.model !== 'auto' && m.some(model => model.id === s.model))
+      if (!isMounted) return;
+      const availableModels = (m && m.length > 0) ? m : api.DEFAULT_OFFLINE_MODELS;
+      setModels(availableModels);
+      const chosenModel = (s.model && s.model !== 'auto' && availableModels.some(model => model.id === s.model))
         ? s.model
-        : (m[0]?.id || '');
+        : (availableModels[0]?.id || '');
       setSettings({ ...s, model: chosenModel });
     });
+
+    return () => { isMounted = false; };
   }, []);
 
   // Reset scroll state on switching conversations
@@ -327,6 +343,31 @@ export const App: React.FC = () => {
           onOpenSettings={() => setIsSettingsOpen(true)}
           onCycleTheme={handleCycleTheme}
         />
+
+        {isServerConnected === false && (
+          <div
+            onClick={() => setIsSettingsOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              backgroundColor: 'rgba(234, 179, 8, 0.1)',
+              borderBottom: '1px solid rgba(234, 179, 8, 0.25)',
+              color: '#facc15',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              zIndex: 30,
+              userSelect: 'none',
+              textAlign: 'center',
+            }}
+          >
+            <AlertCircle size={13} style={{ flexShrink: 0 }} />
+            <span>AI Server disconnected. Tap to configure server address.</span>
+          </div>
+        )}
 
         {memoryNotice && (
           <div className="memory-toast-notice" role="status" aria-live="polite" data-testid="memory-toast-notice">
