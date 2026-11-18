@@ -43,16 +43,20 @@ export const DEFAULT_OFFLINE_MODELS: ModelInfo[] = [
 
 /**
  * Resolves the active API base URL.
- * Order of precedence:
- * 1. User-configured custom URL in Settings (saved in localStorage).
- * 2. Injected window.__API_BASE__ (if provided).
- * 3. Capacitor Android runtime -> default to local WiFi server http://10.62.19.85:3001/api.
- * 4. Web browser runtime -> relative '/api'.
+ * The production backend is deployed live at https://madura-ai.vercel.app/api.
+ * In Android Capacitor native app, all AI tasks route securely over HTTPS to the Vercel cloud backend.
  */
 export function getApiBaseUrl(): string {
-  if (typeof window === 'undefined') return '/api';
+  const CLOUD_API_BASE = 'https://madura-ai.vercel.app/api';
 
-  // 1. User manual override from Settings
+  if (typeof window === 'undefined') return CLOUD_API_BASE;
+
+  // If running in browser on the Vercel domain, use relative /api
+  if (window.location.hostname === 'madura-ai.vercel.app') {
+    return '/api';
+  }
+
+  // If user explicitly configured an override in localStorage
   const customUrl = localStorage.getItem('madura_api_url');
   if (customUrl && customUrl.trim()) {
     let clean = customUrl.trim().replace(/\/+$/, '');
@@ -60,25 +64,9 @@ export function getApiBaseUrl(): string {
     return clean;
   }
 
-  // 2. Injected window global
-  if ((window as any).__API_BASE__) {
-    return (window as any).__API_BASE__;
-  }
-
-  // 3. Android Capacitor detection
-  const ua = navigator.userAgent || '';
-  const isAndroid = /android/i.test(ua);
-  const isCapacitor =
-    window.location.protocol === 'capacitor:' ||
-    (window.location.hostname === 'localhost' && isAndroid);
-
-  if (isCapacitor || isAndroid) {
-    // Default LAN IP of development PC
-    return 'http://10.62.19.85:3001/api';
-  }
-
-  // 4. Default web
-  return '/api';
+  // In Android Capacitor APK, WebView, and external clients:
+  // Route seamlessly to the live HTTPS cloud backend
+  return CLOUD_API_BASE;
 }
 
 /**

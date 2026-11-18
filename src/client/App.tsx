@@ -344,31 +344,6 @@ export const App: React.FC = () => {
           onCycleTheme={handleCycleTheme}
         />
 
-        {isServerConnected === false && (
-          <div
-            onClick={() => setIsSettingsOpen(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              backgroundColor: 'rgba(234, 179, 8, 0.1)',
-              borderBottom: '1px solid rgba(234, 179, 8, 0.25)',
-              color: '#facc15',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              zIndex: 30,
-              userSelect: 'none',
-              textAlign: 'center',
-            }}
-          >
-            <AlertCircle size={13} style={{ flexShrink: 0 }} />
-            <span>AI Server disconnected. Tap to configure server address.</span>
-          </div>
-        )}
-
         {memoryNotice && (
           <div className="memory-toast-notice" role="status" aria-live="polite" data-testid="memory-toast-notice">
             <Check size={13} />
