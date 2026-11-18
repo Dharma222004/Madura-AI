@@ -26,7 +26,7 @@ export async function getApp(): Promise<Express> {
   const NVIDIA_BASE_URL = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
   const GROQ_API_KEYS = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '';
   const GROQ_WHISPER_MODEL = process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo';
-  const TAVILY_API_KEYS = process.env.TAVILY_API_KEYS || process.env.TAVILY_API_KEY || '';
+  const TAVILY_API_KEYS = process.env.TAVILY_API_KEYS || process.env.TAVILY_API_KEY || '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';
   const DATA_DIR = process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/data' : './data');
   const MAX_UPLOAD_MB = parseInt(process.env.MAX_UPLOAD_SIZE_MB || '25', 10);
   const ENABLE_MOCK_FALLBACK = process.env.ENABLE_MOCK_FALLBACK !== 'false';

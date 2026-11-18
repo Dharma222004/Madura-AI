@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
 
-export function useTheme(initialTheme: Theme = 'system') {
+export function useTheme(initialTheme: Theme = 'dark') {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem('madura-theme') as Theme) || initialTheme;
+    return (localStorage.getItem('madura-theme') as Theme) || initialTheme || 'dark';
   });
 
   useEffect(() => {

@@ -32,6 +32,8 @@ export interface SearchSource {
   title: string;
   url: string;
   snippet?: string;
+  score?: number;        // Tavily relevance score (0–1)
+  publishedDate?: string; // ISO date string when available
 }
 
 export interface Message {

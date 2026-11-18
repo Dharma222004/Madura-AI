@@ -14,7 +14,7 @@ import { ChevronDown, Check } from 'lucide-react';
 
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Madura User',
-  theme: 'system',
+  theme: 'dark',
   model: '',
   temperature: 0.7,
   maxTokens: 8192,
@@ -202,7 +202,8 @@ export const App: React.FC = () => {
   // Non-blocking auto-scroll during streaming or message addition:
   // Only scrolls if the user is pinned at bottom and not manually scrolling/reading earlier text
   useEffect(() => {
-    if (chatViewportRef.current && !userScrolledUpRef.current && !isUserInteractingRef.current) {
+    // Only auto-scroll when NOT streaming - during streaming, let user read peacefully
+    if (!isStreaming && chatViewportRef.current && !userScrolledUpRef.current && !isUserInteractingRef.current) {
       const el = chatViewportRef.current;
       requestAnimationFrame(() => {
         if (!userScrolledUpRef.current && !isUserInteractingRef.current && el) {

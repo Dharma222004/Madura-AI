@@ -264,9 +264,19 @@ export class ChatService {
     const hasVisionImages = historyImageBlocks.length > 0;
 
     // Vision-capable model IDs in MultiModelProvider
-    const VISION_MODELS = new Set(['nemotron-omni', 'gemini-flash', 'nemotron-3.5-super']);
-    if (hasVisionImages && !VISION_MODELS.has(effectiveModel)) {
-      effectiveModel = 'nemotron-omni';
+    // Always override to a vision model when images are present, regardless of user selection
+    const VISION_MODELS = new Set([
+      'nemotron-omni',
+      'gemini-flash',
+      'nemotron-3.5-super',
+      'gpt-4o',
+      'gpt-4-vision',
+    ]);
+    if (hasVisionImages) {
+      if (!VISION_MODELS.has(effectiveModel)) {
+        // Force switch to best vision model for OCR and image understanding
+        effectiveModel = 'nemotron-omni';
+      }
     }
 
     // Filter for text-bearing document attachments (including embedded OCR/metadata text when present)
@@ -500,13 +510,19 @@ Guidelines:
 
         // C. Inject Live Web Search Context if active
         if (searchData && searchData.results.length > 0) {
+          // Build a rich, numbered source block so the AI can cite accurately
           const sourcesText = searchData.results
-            .map((r, i) => `[Source ${i + 1}]: "${r.title}" (${r.url})\n${r.snippet}`)
-            .join('\n\n');
+            .map((r, idx) => {
+              const domain = (() => { try { return new URL(r.url).hostname.replace('www.', ''); } catch { return r.url; } })();
+              return `[${idx + 1}] **${r.title}** — *${domain}*\nURL: ${r.url}\n${r.snippet.slice(0, 800)}`;
+            })
+            .join('\n\n---\n\n');
 
-          mainText = `${mainText}\n\n[Live Web Search Context for: "${searchData.query}"]\n${
-            searchData.answer ? `Direct Synthesis: ${searchData.answer}\n\n` : ''
-          }${sourcesText}\n\n[System Directive: The live search results above were retrieved from the web in real-time. Use them to provide an accurate, up-to-date response. Cite key sources using markdown links [Source Name](url).]`;
+          const directAnswer = searchData.answer
+            ? `📌 **Tavily Direct Answer:** ${searchData.answer}\n\n`
+            : '';
+
+          mainText = `${mainText}\n\n━━━ 🌐 LIVE WEB SEARCH RESULTS ━━━\nQuery: "${searchData.query}"\nSources retrieved: ${searchData.results.length} from trusted websites\n\n${directAnswer}${sourcesText}\n\n━━━ END OF SEARCH RESULTS ━━━\n\n[SYSTEM DIRECTIVE — MUST FOLLOW:\n1. Use the search results above as your PRIMARY source of truth for this response.\n2. Synthesize information across all sources — do NOT just quote one.\n3. Cite your sources using markdown links like [Source Name](url) or reference as [1], [2], etc.\n4. If the sources contain conflicting info, note the discrepancy.\n5. If the sources do not answer the question, say so honestly.\n6. Present a clean, well-structured answer — the user expects a comprehensive, accurate response from real web data.]`;
         }
 
         if (mainText.trim()) {

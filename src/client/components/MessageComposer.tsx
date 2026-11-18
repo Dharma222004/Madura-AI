@@ -781,6 +781,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               onPaste={handlePaste}
               rows={1}
               data-testid="chat-input-textarea"
+              autoCorrect="on"
+              autoComplete="on"
+              autoCapitalize="sentences"
+              spellCheck={true}
             />
 
             {/* Right Tools (Web Search, Mic, Send) */}
